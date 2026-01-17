@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QUIZZER</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎓 QUIZZER</h1>
+            <p>Master Your Knowledge with Interactive Quizzes</p>
+            <button class="theme-toggle" onclick="toggleTheme()">🌙</button>
+        </div>
+
+        <!-- Home Section -->
+        <div id="home-section" class="home-section">
+            <div class="top-scorer">
+                <h3>🏆 Top Scorer</h3>
+                <div id="top-scorer-details">Loading top scorer...</div>
+            </div>
+            <div class="upcoming-tests">
+                <h3>📅 Upcoming Tests</h3>
+                <div id="upcoming-tests-list">Loading upcoming tests...</div>
+            </div>
+            <button onclick="requestNotificationPermission()" class="btn btn-primary">Enable Exam Notifications</button>
+        </div>
+
+        <!-- Authentication Section -->
+        <div id="auth-section" class="auth-section hidden">
+            <div class="tab-buttons">
+                <button class="tab-button active" onclick="switchTab('login')">Login</button>
+                <button class="tab-button" onclick="switchTab('register')">Register</button>
+            </div>
+
+            <div id="login-tab" class="tab-content active">
+                <h3 style="margin-bottom: 20px;">Login to Your Account</h3>
+                <form id="login-form">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="login-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="login-password" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Login</button>
+                </form>
+                <div class="forgot-password-link">
+                    <a href="#" onclick="switchTab('forgot-password')">Forgot Password?</a>
+                </div>
+            </div>
+
+            <div id="register-tab" class="tab-content">
+                <h3 style="margin-bottom: 20px;">Create New Account</h3>
+                <form id="register-form">
+                    <div class="form-group">
+                        <label>Full Name</label>
+                        <input type="text" id="register-name" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="register-email" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" id="register-password" required>
+                    </div>
+                    <div class="form-group">
+                        <label>Role</label>
+                        <select id="register-role" required onchange="toggleAdminKey()">
+                            <option value="student">Student</option>
+                            <option value="admin">Admin/Teacher</option>
+                        </select>
+                    </div>
+                    <div class="form-group hidden" id="admin-key-group">
+                        <label>Admin Access Key</label>
+                        <input type="password" id="admin-key" class="admin-key-field" placeholder="Enter admin access key">
+                        <div class="admin-key-help">
+                            Contact your administrator for the admin access key.
+                        </div>
+                    </div>
+                    <div class="form-group hidden" id="quiz-duration-group">
+                        <label>Quiz Duration (minutes)</label>
+                        <input type="number" id="quiz-duration" min="1" placeholder="Enter quiz duration in minutes">
+                        <div class="admin-key-help">
+                            Set the duration for each quiz session.
+                        </div>
+                    </div>
+                    <div class="form-group hidden" id="exam-schedule-group">
+                        <label>Exam Schedule</label>
+                        <input type="datetime-local" id="exam-start" required>
+                        <input type="datetime-local" id="exam-end" required>
+                        <div class="admin-key-help">
+                            Set the start and end time for the quiz availability.
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-success">Register</button>
+                </form>
+                <div class="forgot-password-link">
+                    <a href="#" onclick="switchTab('forgot-password')">Forgot Password?</a>
+                </div>
+            </div>
+
+            <div id="forgot-password-tab" class="tab-content">
+                <h3 style="margin-bottom: 20px;">Reset Password</h3>
+                <form id="forgot-password-form">
+                    <div class="form-group">
+                        <label>Email</label>
+                        <input type="email" id="forgot-email" required>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Send Reset Link</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="main-content" class="main-content hidden">
+            <div id="timer-container" class="timer-container hidden">
+                Time Remaining: <span id="timer">00:00</span>
+            </div>
+
+            <!-- Admin Panel -->
+            <div id="admin-panel" class="hidden">
+                <div class="tab-buttons">
+                    <button class="tab-button active" onclick="switchAdminTab('create-quiz')">Create Quiz</button>
+                    <button class="tab-button" onclick="switchAdminTab('bulk-upload')">Bulk Upload</button>
+                    <button class="tab-button" onclick="switchAdminTab('view-scores')">View Scores</button>
+                    <button class="tab-button" onclick="switchAdminTab('analytics')">Analytics</button>
+                </div>
+
+                <div id="create-quiz-tab" class="tab-content active">
+                    <h3>Create New Quiz Question</h3>
+                    <form id="question-form">
+                        <div class="form-group">
+                            <label>Question</label>
+                            <textarea id="question-text" rows="3" placeholder="Enter your question here..." required oninput="validateQuestion()"></textarea>
+                            <div id="question-error" class="validation-error"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Option A</label>
+                            <input type="text" id="option-a" placeholder="Enter option A" required oninput="validateQuestion()">
+                            <div id="option-a-error" class="validation-error"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Option B</label>
+                            <input type="text" id="option-b" placeholder="Enter option B" required oninput="validateQuestion()">
+                            <div id="option-b-error" class="validation-error"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Option C</label>
+                            <input type="text" id="option-c" placeholder="Enter option C" required oninput="validateQuestion()">
+                            <div id="option-c-error" class="validation-error"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Option D</label>
+                            <input type="text" id="option-d" placeholder="Enter option D" required oninput="validateQuestion()">
+                            <div id="option-d-error" class="validation-error"></div>
+                        </div>
+                        <div class="form-group">
+                            <label>Correct Answer</label>
+                            <select id="correct-answer" required oninput="validateQuestion()">
+                                <option value="">Select correct answer</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="D">D</option>
+                            </select>
+                            <div id="correct-answer-error" class="validation-error"></div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Add Question</button>
+                    </form>
+
+                    <div id="questions-list" style="margin-top: 30px;">
+                        <h3>Existing Questions</h3>
+                        <div id="questions-container"></div>
+                    </div>
+                </div>
+
+                <div id="bulk-upload-tab" class="tab-content">
+                    <h3>Bulk Upload Questions</h3>
+                    <form id="bulk-upload-form">
+                        <div class="form-group">
+                            <label>JSON Questions</label>
+                            <textarea id="bulk-questions" rows="10" placeholder='Paste JSON here, e.g. [{"question":"What is 2+2?","options":{"A":"2","B":"4","C":"6","D":"8"},"correctAnswer":"B"},...]' oninput="validateBulkQuestions()"></textarea>
+                            <div id="bulk-questions-error" class="validation-error"></div>
+                        </div>
+                        <button type="submit" class="btn btn-primary">Upload Questions</button>
+                    </form>
+                </div>
+
+                <div id="view-scores-tab" class="tab-content">
+                    <h3>Student Scores</h3>
+                    <div id="scores-container">
+                        <div class="loading">Loading scores...</div>
+                    </div>
+                </div>
+
+                <div id="analytics-tab" class="tab-content">
+                    <h3>Score Distribution Analytics</h3>
+                    <canvas id="score-chart" class="analytics-chart"></canvas>
+                </div>
+            </div>
+
+            <!-- Student Panel -->
+            <div id="student-panel" class="hidden">
+                <div id="quiz-start" class="text-center">
+                    <h3>Ready to take the quiz?</h3>
+                    <p>Answer all questions and submit to see your score.</p>
+                    <button onclick="startQuiz()" class="btn btn-primary">Start Quiz</button>
+                </div>
+
+                <div id="quiz-container" class="hidden">
+                    <div class="progress-bar">
+                        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+                    </div>
+                    <div id="quiz-questions"></div>
+                    <div style="text-align: right; margin-top: 20px;">
+                        <button onclick="nextQuestion()" class="btn btn-primary">Next</button>
+                        <button onclick="submitQuiz()" class="btn btn-success">Submit Quiz</button>
+                    </div>
+                </div>
+
+                <div id="quiz-results" class="quiz-results hidden">
+                    <h2>Quiz Results</h2>
+                    <div class="score-display" id="final-score"></div>
+                    <div id="result-details"></div>
+                    <button onclick="printResults()" class="btn btn-primary">Print Results</button>
+                    <button onclick="retakeQuiz()" class="btn btn-success">Take Quiz Again</button>
+                </div>
+
+                <div id="quiz-history" class="quiz-history hidden">
+                    <h3>Your Quiz History</h3>
+                    <div id="history-container">
+                        <div class="loading">Loading history...</div>
+                    </div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button onclick="logout()" class="btn btn-danger">Logout</button>
+                <button onclick="showHome()" class="btn btn-primary">Home</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>Created by Dev Sioplight</p>
+        <p>Contact: <a href="mailto:dev.sioplight@example.com">dev.sioplight@example.com</a> | Phone: <a href="tel:+1234567890">+1234567890</a></p>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>
