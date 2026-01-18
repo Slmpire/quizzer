@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, onSnapshot, query, orderBy, limit, where } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -79,7 +79,7 @@ async function scheduleNotifications() {
         const userData = doc.data();
         if (userData.role === 'admin' && userData.examStart && userData.examEnd) {
             const startTime = userData.examStart.toDate();
-            const notificationTime = new Date(startTime.getTime() - 15 * 60 * 1000); // 15 minutes before
+            const notificationTime = new Date(startTime.getTime() - 15 * 60 * 1000);
             if (notificationTime > new Date()) {
                 setTimeout(() => {
                     new Notification('QUIZZER Exam Reminder', {
@@ -213,7 +213,6 @@ async function checkAdminLimit() {
 
 // Load top scorer and upcoming tests
 async function loadHomeContent() {
-    // Load top scorer
     const scoresSnapshot = await getDocs(query(collection(db, 'scores'), orderBy('score', 'desc'), limit(1)));
     if (!scoresSnapshot.empty) {
         const topScore = scoresSnapshot.docs[0].data();
@@ -229,7 +228,6 @@ async function loadHomeContent() {
         topScorerDetails.innerHTML = '<p>No scores available yet.</p>';
     }
 
-    // Load upcoming tests
     const adminSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt')));
     let tests = [];
     adminSnapshot.forEach(doc => {
@@ -605,7 +603,6 @@ async function loadQuizHistory() {
 // Student functions
 window.startQuiz = async function() {
     try {
-        // Check exam schedule
         const adminSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt')));
         let canTakeQuiz = false;
         adminSnapshot.forEach(doc => {
@@ -640,7 +637,6 @@ window.startQuiz = async function() {
         studentAnswers = {};
         currentQuestionIndex = 0;
 
-        // Get quiz duration
         let quizDuration = 30;
         adminSnapshot.forEach(doc => {
             const userData = doc.data();
@@ -701,7 +697,6 @@ function displayQuiz() {
     `;
     quizContainer.appendChild(questionDiv);
 
-    // Update progress bar
     const progress = ((currentQuestionIndex + 1) / currentQuestions.length) * 100;
     progressBarFill.style.width = `${progress}%`;
 
@@ -775,9 +770,26 @@ function displayResults(score, total, results) {
                     <p><strong>Q${index + 1}:</strong> ${result.question}</p>
                     <p><strong>Your Answer:</strong> ${result.studentAnswer}</p>
                     <p><strong>Correct Answer:</strong> ${result.correctAnswer}</p>
-                    <p><strong>Result:</strong> <span style="color: ${result.isCorrect ? 'var(--primary)' : 'var(--error)'}">${result.isCorrect ? 'Correct' : 'Incorrect'}</span></p>
+                    <p><strong>Result:</strong> <span style="color: ${result.isCorrect ? 'var(--primary)' : 'var(--error)'}">${result.isCorrect ? '✓ Correct' : '✗ Incorrect'}</span></p>
                 </div>
             `).join('')}
         </div>
     `;
+
+    document.getElementById('quiz-container').classList.add('hidden');
+    document.getElementById('quiz-results').classList.remove('hidden');
 }
+
+window.printResults = function() {
+    window.print();
+};
+
+window.retakeQuiz = function() {
+    document.getElementById('quiz-results').classList.add('hidden');
+    document.getElementById('quiz-start').classList.remove('hidden');
+    studentAnswers = {};
+    currentQuestions = [];
+    currentQuestionIndex = 0;
+    timerContainer.classList.add('hidden');
+    clearInterval(timerInterval);
+};
