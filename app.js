@@ -1,6 +1,6 @@
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js';
-import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
+import { getFirestore, collection, addDoc, getDocs, doc, setDoc, getDoc, query, orderBy, limit, where, writeBatch } from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
 
 // Firebase Configuration
 const firebaseConfig = {
@@ -32,17 +32,78 @@ let timeRemaining;
 let examSchedule = { start: null, end: null };
 let scoreChart = null;
 
-// DOM Elements
-const authSection = document.getElementById('auth-section');
-const mainContent = document.getElementById('main-content');
-const homeSection = document.getElementById('home-section');
-const adminPanel = document.getElementById('admin-panel');
-const studentPanel = document.getElementById('student-panel');
-const timerContainer = document.getElementById('timer-container');
-const timerDisplay = document.getElementById('timer');
-const topScorerDetails = document.getElementById('top-scorer-details');
-const upcomingTestsList = document.getElementById('upcoming-tests-list');
-const progressBarFill = document.getElementById('progress-bar-fill');
+// OPTIMIZATION: Cache frequently accessed data
+let cachedUserData = null;
+let cachedQuestions = null;
+let cachedAdminSettings = null;
+let cacheTimestamp = 0;
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// OPTIMIZATION: DOM Elements - cache all selectors once
+const DOM = {
+    authSection: null,
+    mainContent: null,
+    homeSection: null,
+    adminPanel: null,
+    studentPanel: null,
+    timerContainer: null,
+    timerDisplay: null,
+    topScorerDetails: null,
+    upcomingTestsList: null,
+    progressBarFill: null,
+    questionsContainer: null,
+    scoresContainer: null,
+    historyContainer: null,
+    quizQuestions: null,
+    quizStart: null,
+    quizContainer: null,
+    quizResults: null,
+    finalScore: null,
+    resultDetails: null
+};
+
+// OPTIMIZATION: Initialize DOM cache on load
+function initializeDOM() {
+    DOM.authSection = document.getElementById('auth-section');
+    DOM.mainContent = document.getElementById('main-content');
+    DOM.homeSection = document.getElementById('home-section');
+    DOM.adminPanel = document.getElementById('admin-panel');
+    DOM.studentPanel = document.getElementById('student-panel');
+    DOM.timerContainer = document.getElementById('timer-container');
+    DOM.timerDisplay = document.getElementById('timer');
+    DOM.topScorerDetails = document.getElementById('top-scorer-details');
+    DOM.upcomingTestsList = document.getElementById('upcoming-tests-list');
+    DOM.progressBarFill = document.getElementById('progress-bar-fill');
+    DOM.questionsContainer = document.getElementById('questions-container');
+    DOM.scoresContainer = document.getElementById('scores-container');
+    DOM.historyContainer = document.getElementById('history-container');
+    DOM.quizQuestions = document.getElementById('quiz-questions');
+    DOM.quizStart = document.getElementById('quiz-start');
+    DOM.quizContainer = document.getElementById('quiz-container');
+    DOM.quizResults = document.getElementById('quiz-results');
+    DOM.finalScore = document.getElementById('final-score');
+    DOM.resultDetails = document.getElementById('result-details');
+}
+
+// Call on DOMContentLoaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeDOM);
+} else {
+    initializeDOM();
+}
+
+// OPTIMIZATION: Debounce function for validation
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
 
 // Theme Toggle
 window.toggleTheme = function() {
@@ -54,9 +115,11 @@ window.toggleTheme = function() {
 };
 
 // Load saved theme
-if (localStorage.getItem('theme') === 'dark') {
+const savedTheme = localStorage.getItem('theme');
+if (savedTheme === 'dark') {
     document.body.setAttribute('data-theme', 'dark');
-    document.querySelector('.theme-toggle').textContent = '☀️';
+    const themeToggle = document.querySelector('.theme-toggle');
+    if (themeToggle) themeToggle.textContent = '☀️';
 }
 
 // Notification Permission
@@ -72,42 +135,61 @@ window.requestNotificationPermission = async function() {
     }
 };
 
-// Schedule notifications for upcoming exams
-async function scheduleNotifications() {
-    const adminSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt')));
-    adminSnapshot.forEach(doc => {
-        const userData = doc.data();
-        if (userData.role === 'admin' && userData.examStart && userData.examEnd) {
-            const startTime = userData.examStart.toDate();
-            const notificationTime = new Date(startTime.getTime() - 15 * 60 * 1000);
-            if (notificationTime > new Date()) {
-                setTimeout(() => {
-                    new Notification('QUIZZER Exam Reminder', {
-                        body: `The quiz is starting in 15 minutes at ${startTime.toLocaleString()}!`,
-                        icon: 'https://example.com/quizzer-icon.png'
-                    });
-                }, notificationTime - new Date());
-            }
-        }
-    });
+// OPTIMIZATION: Cache admin settings and reuse
+async function getAdminSettings() {
+    const now = Date.now();
+    if (cachedAdminSettings && (now - cacheTimestamp) < CACHE_DURATION) {
+        return cachedAdminSettings;
+    }
+
+    const adminSnapshot = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin'), limit(1)));
+    if (!adminSnapshot.empty) {
+        cachedAdminSettings = adminSnapshot.docs[0].data();
+        cacheTimestamp = now;
+        return cachedAdminSettings;
+    }
+    return null;
 }
 
-// Tab switching functions
+// Schedule notifications for upcoming exams
+async function scheduleNotifications() {
+    const settings = await getAdminSettings();
+    if (settings && settings.examStart && settings.examEnd) {
+        const startTime = settings.examStart.toDate();
+        const notificationTime = new Date(startTime.getTime() - 15 * 60 * 1000);
+        if (notificationTime > new Date()) {
+            setTimeout(() => {
+                new Notification('QUIZZER Exam Reminder', {
+                    body: `The quiz is starting in 15 minutes at ${startTime.toLocaleString()}!`,
+                    icon: 'https://example.com/quizzer-icon.png'
+                });
+            }, notificationTime - new Date());
+        }
+    }
+}
+
+// OPTIMIZATION: Use event delegation for tab switching
 window.switchTab = function(tab) {
     document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
-    document.querySelector(`[onclick="switchTab('${tab}')"]`).classList.add('active');
-    document.getElementById(`${tab}-tab`).classList.add('active');
+    const tabButton = document.querySelector(`[onclick="switchTab('${tab}')"]`);
+    const tabContent = document.getElementById(`${tab}-tab`);
+    
+    if (tabButton) tabButton.classList.add('active');
+    if (tabContent) tabContent.classList.add('active');
 };
 
 window.switchAdminTab = function(tab) {
-    document.querySelectorAll('#admin-panel .tab-button').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('#admin-panel .tab-content').forEach(content => content.classList.remove('active'));
+    const adminPanel = DOM.adminPanel || document.getElementById('admin-panel');
+    adminPanel.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+    adminPanel.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     
     event.target.classList.add('active');
-    document.getElementById(`${tab}-tab`).classList.add('active');
+    const tabContent = document.getElementById(`${tab}-tab`);
+    if (tabContent) tabContent.classList.add('active');
     
+    // OPTIMIZATION: Lazy load data only when needed
     if (tab === 'view-scores') {
         loadStudentScores();
     } else if (tab === 'analytics') {
@@ -121,46 +203,48 @@ window.toggleAdminKey = function() {
     const quizDurationGroup = document.getElementById('quiz-duration-group');
     const examScheduleGroup = document.getElementById('exam-schedule-group');
     
-    if (role === 'admin') {
-        adminKeyGroup.classList.remove('hidden');
-        quizDurationGroup.classList.remove('hidden');
-        examScheduleGroup.classList.remove('hidden');
-        document.getElementById('admin-key').required = true;
-        document.getElementById('quiz-duration').required = true;
-        document.getElementById('exam-start').required = true;
-        document.getElementById('exam-end').required = true;
-    } else {
-        adminKeyGroup.classList.add('hidden');
-        quizDurationGroup.classList.add('hidden');
-        examScheduleGroup.classList.add('hidden');
-        document.getElementById('admin-key').required = false;
-        document.getElementById('quiz-duration').required = false;
-        document.getElementById('exam-start').required = false;
-        document.getElementById('exam-end').required = false;
-    }
+    const isAdmin = role === 'admin';
+    const toggleClass = isAdmin ? 'remove' : 'add';
+    
+    adminKeyGroup.classList[toggleClass]('hidden');
+    quizDurationGroup.classList[toggleClass]('hidden');
+    examScheduleGroup.classList[toggleClass]('hidden');
+    
+    document.getElementById('admin-key').required = isAdmin;
+    document.getElementById('quiz-duration').required = isAdmin;
+    document.getElementById('exam-start').required = isAdmin;
+    document.getElementById('exam-end').required = isAdmin;
 };
 
-// Validate single question input
-window.validateQuestion = function() {
-    const question = document.getElementById('question-text').value;
-    const optionA = document.getElementById('option-a').value;
-    const optionB = document.getElementById('option-b').value;
-    const optionC = document.getElementById('option-c').value;
-    const optionD = document.getElementById('option-d').value;
-    const correctAnswer = document.getElementById('correct-answer').value;
+// OPTIMIZATION: Debounced validation for better performance
+const debouncedValidateQuestion = debounce(function() {
+    const fields = [
+        { id: 'question-text', error: 'question-error', message: 'Question is required.' },
+        { id: 'option-a', error: 'option-a-error', message: 'Option A is required.' },
+        { id: 'option-b', error: 'option-b-error', message: 'Option B is required.' },
+        { id: 'option-c', error: 'option-c-error', message: 'Option C is required.' },
+        { id: 'option-d', error: 'option-d-error', message: 'Option D is required.' },
+        { id: 'correct-answer', error: 'correct-answer-error', message: 'Correct answer is required.' }
+    ];
 
-    document.getElementById('question-error').textContent = question ? '' : 'Question is required.';
-    document.getElementById('option-a-error').textContent = optionA ? '' : 'Option A is required.';
-    document.getElementById('option-b-error').textContent = optionB ? '' : 'Option B is required.';
-    document.getElementById('option-c-error').textContent = optionC ? '' : 'Option C is required.';
-    document.getElementById('option-d-error').textContent = optionD ? '' : 'Option D is required.';
-    document.getElementById('correct-answer-error').textContent = correctAnswer ? '' : 'Correct answer is required.';
-};
+    fields.forEach(field => {
+        const value = document.getElementById(field.id)?.value;
+        const errorEl = document.getElementById(field.error);
+        if (errorEl) errorEl.textContent = value ? '' : field.message;
+    });
+}, 300);
 
-// Validate bulk questions JSON
+window.validateQuestion = debouncedValidateQuestion;
+
+// OPTIMIZATION: Improved JSON validation with early exit
 window.validateBulkQuestions = function() {
     const bulkQuestions = document.getElementById('bulk-questions').value;
     const errorDiv = document.getElementById('bulk-questions-error');
+    
+    if (!bulkQuestions.trim()) {
+        errorDiv.textContent = 'Please enter questions in JSON format.';
+        return false;
+    }
     
     try {
         const questions = JSON.parse(bulkQuestions);
@@ -169,162 +253,211 @@ window.validateBulkQuestions = function() {
             return false;
         }
 
-        for (const q of questions) {
+        const requiredOptions = ['A', 'B', 'C', 'D'];
+        
+        for (let i = 0; i < questions.length; i++) {
+            const q = questions[i];
+            
             if (!q.question || typeof q.question !== 'string') {
-                errorDiv.textContent = 'Each question must have a valid question text.';
+                errorDiv.textContent = `Question ${i + 1}: Invalid question text.`;
                 return false;
             }
-            if (!q.options || typeof q.options !== 'object' || !q.options.A || !q.options.B || !q.options.C || !q.options.D) {
-                errorDiv.textContent = 'Each question must have four valid options (A, B, C, D).';
+            
+            if (!q.options || typeof q.options !== 'object') {
+                errorDiv.textContent = `Question ${i + 1}: Options must be an object.`;
                 return false;
             }
-            if (!q.correctAnswer || !['A', 'B', 'C', 'D'].includes(q.correctAnswer)) {
-                errorDiv.textContent = 'Each question must have a valid correct answer (A, B, C, or D).';
+            
+            for (const opt of requiredOptions) {
+                if (!q.options[opt]) {
+                    errorDiv.textContent = `Question ${i + 1}: Missing option ${opt}.`;
+                    return false;
+                }
+            }
+            
+            if (!requiredOptions.includes(q.correctAnswer)) {
+                errorDiv.textContent = `Question ${i + 1}: Invalid correct answer.`;
                 return false;
             }
         }
+        
         errorDiv.textContent = '';
         return true;
     } catch (e) {
-        errorDiv.textContent = 'Invalid JSON format.';
+        errorDiv.textContent = 'Invalid JSON format: ' + e.message;
         return false;
     }
 };
 
-// Check admin limit
+// OPTIMIZATION: Cache admin count check
+let cachedAdminCount = null;
+let adminCountCacheTime = 0;
+
 async function checkAdminLimit() {
+    const now = Date.now();
+    if (cachedAdminCount !== null && (now - adminCountCacheTime) < CACHE_DURATION) {
+        return cachedAdminCount < MAX_ADMINS;
+    }
+
     try {
-        const usersSnapshot = await getDocs(collection(db, 'users'));
-        let adminCount = 0;
+        const usersSnapshot = await getDocs(query(collection(db, 'users'), where('role', '==', 'admin')));
+        cachedAdminCount = usersSnapshot.size;
+        adminCountCacheTime = now;
         
-        usersSnapshot.forEach((doc) => {
-            const userData = doc.data();
-            if (userData.role === 'admin') {
-                adminCount++;
-            }
-        });
-        
-        return adminCount < MAX_ADMINS;
+        return cachedAdminCount < MAX_ADMINS;
     } catch (error) {
         console.error('Error checking admin limit:', error);
         return false;
     }
 }
 
-// Load top scorer and upcoming tests
+// OPTIMIZATION: Load home content with parallel queries
 async function loadHomeContent() {
-    const scoresSnapshot = await getDocs(query(collection(db, 'scores'), orderBy('score', 'desc'), limit(1)));
-    if (!scoresSnapshot.empty) {
-        const topScore = scoresSnapshot.docs[0].data();
-        const userDoc = await getDoc(doc(db, 'users', topScore.userId));
-        const userName = userDoc.exists() ? userDoc.data().name : 'Unknown';
-        const percentage = Math.round((topScore.score / topScore.totalQuestions) * 100);
-        topScorerDetails.innerHTML = `
-            <p><strong>${userName}</strong></p>
-            <p>Score: ${topScore.score}/${topScore.totalQuestions} (${percentage}%)</p>
-            <p>Date: ${topScore.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'}</p>
-        `;
-    } else {
-        topScorerDetails.innerHTML = '<p>No scores available yet.</p>';
-    }
+    try {
+        // Parallel queries for better performance
+        const [scoresSnapshot, adminSnapshot] = await Promise.all([
+            getDocs(query(collection(db, 'scores'), orderBy('score', 'desc'), limit(1))),
+            getDocs(query(collection(db, 'users'), where('role', '==', 'admin'), limit(5)))
+        ]);
 
-    const adminSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt')));
-    let tests = [];
-    adminSnapshot.forEach(doc => {
-        const userData = doc.data();
-        if (userData.role === 'admin' && userData.examStart && userData.examEnd) {
-            tests.push({
-                start: userData.examStart.toDate(),
-                end: userData.examEnd.toDate()
-            });
+        // Top scorer
+        if (!scoresSnapshot.empty) {
+            const topScore = scoresSnapshot.docs[0].data();
+            const userDoc = await getDoc(doc(db, 'users', topScore.userId));
+            const userName = userDoc.exists() ? userDoc.data().name : 'Unknown';
+            const percentage = Math.round((topScore.score / topScore.totalQuestions) * 100);
+            
+            if (DOM.topScorerDetails) {
+                DOM.topScorerDetails.innerHTML = `
+                    <p><strong>${userName}</strong></p>
+                    <p>Score: ${topScore.score}/${topScore.totalQuestions} (${percentage}%)</p>
+                    <p>Date: ${topScore.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'}</p>
+                `;
+            }
+        } else if (DOM.topScorerDetails) {
+            DOM.topScorerDetails.innerHTML = '<p>No scores available yet.</p>';
         }
-    });
 
-    upcomingTestsList.innerHTML = tests.length > 0 ? tests.map(test => `
-        <p>Quiz: ${test.start.toLocaleString()} - ${test.end.toLocaleString()}</p>
-    `).join('') : '<p>No upcoming tests scheduled.</p>';
+        // Upcoming tests
+        const tests = [];
+        adminSnapshot.forEach(doc => {
+            const userData = doc.data();
+            if (userData.examStart && userData.examEnd) {
+                tests.push({
+                    start: userData.examStart.toDate(),
+                    end: userData.examEnd.toDate()
+                });
+            }
+        });
+
+        if (DOM.upcomingTestsList) {
+            DOM.upcomingTestsList.innerHTML = tests.length > 0 
+                ? tests.map(test => `<p>Quiz: ${test.start.toLocaleString()} - ${test.end.toLocaleString()}</p>`).join('')
+                : '<p>No upcoming tests scheduled.</p>';
+        }
+    } catch (error) {
+        console.error('Error loading home content:', error);
+    }
 }
 
 // Authentication functions
-document.getElementById('register-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const name = document.getElementById('register-name').value;
-    const email = document.getElementById('register-email').value;
-    const password = document.getElementById('register-password').value;
-    const role = document.getElementById('register-role').value;
-    const adminKey = document.getElementById('admin-key').value;
-    const quizDuration = document.getElementById('quiz-duration').value;
-    const examStart = document.getElementById('exam-start').value;
-    const examEnd = document.getElementById('exam-end').value;
+const registerForm = document.getElementById('register-form');
+if (registerForm) {
+    registerForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('register-name').value;
+        const email = document.getElementById('register-email').value;
+        const password = document.getElementById('register-password').value;
+        const role = document.getElementById('register-role').value;
+        const adminKey = document.getElementById('admin-key').value;
+        const quizDuration = document.getElementById('quiz-duration').value;
+        const examStart = document.getElementById('exam-start').value;
+        const examEnd = document.getElementById('exam-end').value;
 
-    if (role === 'admin') {
-        if (adminKey !== ADMIN_ACCESS_KEY) {
-            alert('Invalid admin access key.');
-            return;
+        if (role === 'admin') {
+            if (adminKey !== ADMIN_ACCESS_KEY) {
+                alert('Invalid admin access key.');
+                return;
+            }
+
+            const canCreateAdmin = await checkAdminLimit();
+            if (!canCreateAdmin) {
+                alert('Maximum number of administrators reached.');
+                return;
+            }
+
+            if (new Date(examStart) >= new Date(examEnd)) {
+                alert('Exam end time must be after start time.');
+                return;
+            }
         }
 
-        const canCreateAdmin = await checkAdminLimit();
-        if (!canCreateAdmin) {
-            alert('Maximum number of administrators reached.');
-            return;
+        try {
+            const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+            const user = userCredential.user;
+
+            await setDoc(doc(db, 'users', user.uid), {
+                name: name,
+                email: email,
+                role: role,
+                quizDuration: role === 'admin' ? parseInt(quizDuration) : null,
+                examStart: role === 'admin' ? new Date(examStart) : null,
+                examEnd: role === 'admin' ? new Date(examEnd) : null,
+                createdAt: new Date()
+            });
+
+            // Clear cache
+            cachedAdminCount = null;
+            cachedAdminSettings = null;
+
+            alert('Registration successful!');
+        } catch (error) {
+            alert('Registration error: ' + error.message);
         }
+    });
+}
 
-        if (new Date(examStart) >= new Date(examEnd)) {
-            alert('Exam end time must be after start time.');
-            return;
+const loginForm = document.getElementById('login-form');
+if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const email = document.getElementById('login-email').value;
+        const password = document.getElementById('login-password').value;
+
+        try {
+            await signInWithEmailAndPassword(auth, email, password);
+        } catch (error) {
+            alert('Login error: ' + error.message);
         }
-    }
+    });
+}
 
-    try {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        const user = userCredential.user;
+const forgotPasswordForm = document.getElementById('forgot-password-form');
+if (forgotPasswordForm) {
+    forgotPasswordForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const email = document.getElementById('forgot-email').value;
 
-        await setDoc(doc(db, 'users', user.uid), {
-            name: name,
-            email: email,
-            role: role,
-            quizDuration: role === 'admin' ? parseInt(quizDuration) : null,
-            examStart: role === 'admin' ? new Date(examStart) : null,
-            examEnd: role === 'admin' ? new Date(examEnd) : null,
-            createdAt: new Date()
-        });
-
-        alert('Registration successful!');
-    } catch (error) {
-        alert('Registration error: ' + error.message);
-    }
-});
-
-document.getElementById('login-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-
-    try {
-        await signInWithEmailAndPassword(auth, email, password);
-    } catch (error) {
-        alert('Login error: ' + error.message);
-    }
-});
-
-document.getElementById('forgot-password-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const email = document.getElementById('forgot-email').value;
-
-    try {
-        await sendPasswordResetEmail(auth, email);
-        alert('Password reset email sent! Check your inbox.');
-    } catch (error) {
-        alert('Error sending reset email: ' + error.message);
-    }
-});
+        try {
+            await sendPasswordResetEmail(auth, email);
+            alert('Password reset email sent! Check your inbox.');
+        } catch (error) {
+            alert('Error sending reset email: ' + error.message);
+        }
+    });
+}
 
 window.logout = async function() {
     try {
         clearInterval(timerInterval);
+        // Clear all caches
+        cachedUserData = null;
+        cachedQuestions = null;
+        cachedAdminSettings = null;
+        cachedAdminCount = null;
         await signOut(auth);
     } catch (error) {
         alert('Logout error: ' + error.message);
@@ -332,12 +465,12 @@ window.logout = async function() {
 };
 
 window.showHome = function() {
-    authSection.classList.remove('hidden');
-    mainContent.classList.add('hidden');
-    homeSection.classList.remove('hidden');
-    adminPanel.classList.add('hidden');
-    studentPanel.classList.add('hidden');
-    timerContainer.classList.add('hidden');
+    DOM.authSection?.classList.remove('hidden');
+    DOM.mainContent?.classList.add('hidden');
+    DOM.homeSection?.classList.remove('hidden');
+    DOM.adminPanel?.classList.add('hidden');
+    DOM.studentPanel?.classList.add('hidden');
+    DOM.timerContainer?.classList.add('hidden');
     clearInterval(timerInterval);
 };
 
@@ -345,141 +478,208 @@ window.showHome = function() {
 onAuthStateChanged(auth, async (user) => {
     if (user) {
         currentUser = user;
-        const userDoc = await getDoc(doc(db, 'users', user.uid));
-        const userData = userDoc.data();
+        
+        // OPTIMIZATION: Cache user data
+        if (!cachedUserData || cachedUserData.uid !== user.uid) {
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            cachedUserData = { uid: user.uid, ...userDoc.data() };
+        }
+        const userData = cachedUserData;
 
-        authSection.classList.add('hidden');
-        homeSection.classList.add('hidden');
-        mainContent.classList.remove('hidden');
+        DOM.authSection?.classList.add('hidden');
+        DOM.homeSection?.classList.add('hidden');
+        DOM.mainContent?.classList.remove('hidden');
 
         if (userData.role === 'admin') {
-            adminPanel.classList.remove('hidden');
-            studentPanel.classList.add('hidden');
+            DOM.adminPanel?.classList.remove('hidden');
+            DOM.studentPanel?.classList.add('hidden');
             loadQuestions();
         } else {
-            studentPanel.classList.remove('hidden');
-            adminPanel.classList.add('hidden');
+            DOM.studentPanel?.classList.remove('hidden');
+            DOM.adminPanel?.classList.add('hidden');
             loadQuizHistory();
         }
     } else {
         currentUser = null;
-        authSection.classList.remove('hidden');
-        mainContent.classList.add('hidden');
-        homeSection.classList.remove('hidden');
-        adminPanel.classList.add('hidden');
-        studentPanel.classList.add('hidden');
-        timerContainer.classList.add('hidden');
+        cachedUserData = null;
+        
+        DOM.authSection?.classList.remove('hidden');
+        DOM.mainContent?.classList.add('hidden');
+        DOM.homeSection?.classList.remove('hidden');
+        DOM.adminPanel?.classList.add('hidden');
+        DOM.studentPanel?.classList.add('hidden');
+        DOM.timerContainer?.classList.add('hidden');
         clearInterval(timerInterval);
         loadHomeContent();
     }
 });
 
 // Admin functions
-document.getElementById('question-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const questionData = {
-        question: document.getElementById('question-text').value,
-        options: {
-            A: document.getElementById('option-a').value,
-            B: document.getElementById('option-b').value,
-            C: document.getElementById('option-c').value,
-            D: document.getElementById('option-d').value
-        },
-        correctAnswer: document.getElementById('correct-answer').value,
-        createdAt: new Date(),
-        createdBy: currentUser.uid
-    };
+const questionForm = document.getElementById('question-form');
+if (questionForm) {
+    questionForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const questionData = {
+            question: document.getElementById('question-text').value,
+            options: {
+                A: document.getElementById('option-a').value,
+                B: document.getElementById('option-b').value,
+                C: document.getElementById('option-c').value,
+                D: document.getElementById('option-d').value
+            },
+            correctAnswer: document.getElementById('correct-answer').value,
+            createdAt: new Date(),
+            createdBy: currentUser.uid
+        };
 
-    try {
-        await addDoc(collection(db, 'questions'), questionData);
-        document.getElementById('question-form').reset();
-        document.querySelectorAll('.validation-error').forEach(el => el.textContent = '');
-        alert('Question added successfully!');
-        loadQuestions();
-    } catch (error) {
-        alert('Error adding question: ' + error.message);
-    }
-});
+        try {
+            await addDoc(collection(db, 'questions'), questionData);
+            questionForm.reset();
+            document.querySelectorAll('.validation-error').forEach(el => el.textContent = '');
+            alert('Question added successfully!');
+            
+            // Clear cache
+            cachedQuestions = null;
+            loadQuestions();
+        } catch (error) {
+            alert('Error adding question: ' + error.message);
+        }
+    });
+}
 
-document.getElementById('bulk-upload-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+// OPTIMIZATION: Use batch writes for bulk upload
+const bulkUploadForm = document.getElementById('bulk-upload-form');
+if (bulkUploadForm) {
+    bulkUploadForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (!validateBulkQuestions()) {
+            return;
+        }
+
+        const bulkQuestions = JSON.parse(document.getElementById('bulk-questions').value);
+
+        try {
+            const batch = writeBatch(db);
+            const questionsRef = collection(db, 'questions');
+            
+            bulkQuestions.forEach((questionData) => {
+                const newDocRef = doc(questionsRef);
+                batch.set(newDocRef, {
+                    question: questionData.question,
+                    options: questionData.options,
+                    correctAnswer: questionData.correctAnswer,
+                    createdAt: new Date(),
+                    createdBy: currentUser.uid
+                });
+            });
+            
+            await batch.commit();
+            
+            bulkUploadForm.reset();
+            document.getElementById('bulk-questions-error').textContent = '';
+            alert('Questions uploaded successfully!');
+            
+            // Clear cache
+            cachedQuestions = null;
+            loadQuestions();
+        } catch (error) {
+            alert('Error uploading questions: ' + error.message);
+        }
+    });
+}
+
+// OPTIMIZATION: Cache questions with timestamp
+async function loadQuestions() {
+    const now = Date.now();
     
-    if (!validateBulkQuestions()) {
+    // Use cached questions if available and fresh
+    if (cachedQuestions && (now - cacheTimestamp) < CACHE_DURATION) {
+        displayQuestions(cachedQuestions);
         return;
     }
 
-    const bulkQuestions = JSON.parse(document.getElementById('bulk-questions').value);
-
-    try {
-        for (const questionData of bulkQuestions) {
-            await addDoc(collection(db, 'questions'), {
-                question: questionData.question,
-                options: questionData.options,
-                correctAnswer: questionData.correctAnswer,
-                createdAt: new Date(),
-                createdBy: currentUser.uid
-            });
-        }
-        document.getElementById('bulk-upload-form').reset();
-        document.getElementById('bulk-questions-error').textContent = '';
-        alert('Questions uploaded successfully!');
-        loadQuestions();
-    } catch (error) {
-        alert('Error uploading questions: ' + error.message);
-    }
-});
-
-async function loadQuestions() {
     try {
         const questionsSnapshot = await getDocs(collection(db, 'questions'));
-        const questionsContainer = document.getElementById('questions-container');
-        questionsContainer.innerHTML = '';
-
+        cachedQuestions = [];
+        
         questionsSnapshot.forEach((doc) => {
-            const question = doc.data();
-            const questionCard = document.createElement('div');
-            questionCard.className = 'question-card';
-            questionCard.innerHTML = `
-                <h4>${question.question}</h4>
-                <div class="question-options">
-                    <p><strong>A:</strong> ${question.options.A}</p>
-                    <p><strong>B:</strong> ${question.options.B}</p>
-                    <p><strong>C:</strong> ${question.options.C}</p>
-                    <p><strong>D:</strong> ${question.options.D}</p>
-                    <p><strong>Correct Answer:</strong> ${question.correctAnswer}</p>
-                </div>
-            `;
-            questionsContainer.appendChild(questionCard);
+            cachedQuestions.push({ id: doc.id, ...doc.data() });
         });
+        
+        cacheTimestamp = now;
+        displayQuestions(cachedQuestions);
     } catch (error) {
         console.error('Error loading questions:', error);
     }
 }
 
+// OPTIMIZATION: Separate display logic from data loading
+function displayQuestions(questions) {
+    if (!DOM.questionsContainer) return;
+    
+    // Use DocumentFragment for better performance
+    const fragment = document.createDocumentFragment();
+    
+    questions.forEach((question) => {
+        const questionCard = document.createElement('div');
+        questionCard.className = 'question-card';
+        questionCard.innerHTML = `
+            <h4>${question.question}</h4>
+            <div class="question-options">
+                <p><strong>A:</strong> ${question.options.A}</p>
+                <p><strong>B:</strong> ${question.options.B}</p>
+                <p><strong>C:</strong> ${question.options.C}</p>
+                <p><strong>D:</strong> ${question.options.D}</p>
+                <p><strong>Correct Answer:</strong> ${question.correctAnswer}</p>
+            </div>
+        `;
+        fragment.appendChild(questionCard);
+    });
+    
+    DOM.questionsContainer.innerHTML = '';
+    DOM.questionsContainer.appendChild(fragment);
+}
+
+// OPTIMIZATION: Parallel loading for scores
 async function loadStudentScores() {
+    if (!DOM.scoresContainer) return;
+    
     try {
         const scoresSnapshot = await getDocs(collection(db, 'scores'));
-        const scoresContainer = document.getElementById('scores-container');
-        scoresContainer.innerHTML = '<h4>Student Scores</h4>';
-
-        const scores = [];
-        for (const scoreDoc of scoresSnapshot.docs) {
+        
+        // Collect all user IDs
+        const userIds = [...new Set(scoresSnapshot.docs.map(doc => doc.data().userId))];
+        
+        // Fetch all users in parallel
+        const userPromises = userIds.map(uid => getDoc(doc(db, 'users', uid)));
+        const userDocs = await Promise.all(userPromises);
+        
+        // Create user map for quick lookup
+        const userMap = {};
+        userDocs.forEach(userDoc => {
+            if (userDoc.exists()) {
+                userMap[userDoc.id] = userDoc.data().name;
+            }
+        });
+        
+        // Process scores
+        const scores = scoresSnapshot.docs.map(scoreDoc => {
             const score = scoreDoc.data();
-            const userDoc = await getDoc(doc(db, 'users', score.userId));
-            const userName = userDoc.exists() ? userDoc.data().name : 'Unknown';
-            
-            scores.push({
-                name: userName,
+            return {
+                name: userMap[score.userId] || 'Unknown',
                 score: score.score,
                 totalQuestions: score.totalQuestions,
                 percentage: Math.round((score.score / score.totalQuestions) * 100),
                 timestamp: score.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'
-            });
-        }
+            };
+        });
 
         scores.sort((a, b) => b.percentage - a.percentage);
 
+        // Use DocumentFragment
+        const fragment = document.createDocumentFragment();
         const scoresDiv = document.createElement('div');
         scoresDiv.className = 'student-scores';
         
@@ -494,10 +694,12 @@ async function loadStudentScores() {
             scoresDiv.appendChild(scoreItem);
         });
 
-        scoresContainer.appendChild(scoresDiv);
+        fragment.appendChild(scoresDiv);
+        DOM.scoresContainer.innerHTML = '<h4>Student Scores</h4>';
+        DOM.scoresContainer.appendChild(fragment);
     } catch (error) {
         console.error('Error loading scores:', error);
-        document.getElementById('scores-container').innerHTML = '<p>Error loading scores</p>';
+        DOM.scoresContainer.innerHTML = '<p>Error loading scores</p>';
     }
 }
 
@@ -520,7 +722,11 @@ async function loadAnalytics() {
             scoreChart.destroy();
         }
 
-        const ctx = document.getElementById('score-chart').getContext('2d');
+        const ctx = document.getElementById('score-chart')?.getContext('2d');
+        if (!ctx) return;
+        
+        const isDark = document.body.getAttribute('data-theme') === 'dark';
+        
         scoreChart = new Chart(ctx, {
             type: 'bar',
             data: {
@@ -528,25 +734,27 @@ async function loadAnalytics() {
                 datasets: [{
                     label: 'Score Distribution',
                     data: data,
-                    backgroundColor: document.body.getAttribute('data-theme') === 'dark' ? '#66BB6A' : '#4CAF50',
-                    borderColor: document.body.getAttribute('data-theme') === 'dark' ? '#98FB98' : '#2E7D32',
+                    backgroundColor: isDark ? '#66BB6A' : '#4CAF50',
+                    borderColor: isDark ? '#98FB98' : '#2E7D32',
                     borderWidth: 1
                 }]
             },
             options: {
+                responsive: true,
+                maintainAspectRatio: true,
                 scales: {
                     y: {
                         beginAtZero: true,
-                        ticks: { color: document.body.getAttribute('data-theme') === 'dark' ? '#E8F5E9' : '#1B5E20' },
-                        grid: { color: document.body.getAttribute('data-theme') === 'dark' ? '#4B5E6A' : '#C8E6C9' }
+                        ticks: { color: isDark ? '#E8F5E9' : '#1B5E20' },
+                        grid: { color: isDark ? '#4B5E6A' : '#C8E6C9' }
                     },
                     x: {
-                        ticks: { color: document.body.getAttribute('data-theme') === 'dark' ? '#E8F5E9' : '#1B5E20' },
+                        ticks: { color: isDark ? '#E8F5E9' : '#1B5E20' },
                         grid: { display: false }
                     }
                 },
                 plugins: {
-                    legend: { labels: { color: document.body.getAttribute('data-theme') === 'dark' ? '#E8F5E9' : '#1B5E20' } }
+                    legend: { labels: { color: isDark ? '#E8F5E9' : '#1B5E20' } }
                 }
             }
         });
@@ -556,78 +764,81 @@ async function loadAnalytics() {
 }
 
 async function loadQuizHistory() {
+    if (!DOM.historyContainer) return;
+    
     try {
-        const scoresSnapshot = await getDocs(query(collection(db, 'scores'), where('userId', '==', currentUser.uid)));
-        const historyContainer = document.getElementById('history-container');
-        historyContainer.innerHTML = '';
-
-        const historyDiv = document.createElement('div');
-        historyDiv.className = 'quiz-history';
+        const scoresSnapshot = await getDocs(query(
+            collection(db, 'scores'), 
+            where('userId', '==', currentUser.uid),
+            orderBy('timestamp', 'desc')
+        ));
         
         if (scoresSnapshot.empty) {
-            historyContainer.innerHTML = '<p>No quiz history available.</p>';
+            DOM.historyContainer.innerHTML = '<p>No quiz history available.</p>';
             return;
         }
 
-        const history = [];
+        const fragment = document.createDocumentFragment();
+        const historyDiv = document.createElement('div');
+        historyDiv.className = 'quiz-history';
+        
         scoresSnapshot.forEach(doc => {
             const score = doc.data();
-            history.push({
-                score: score.score,
-                totalQuestions: score.totalQuestions,
-                percentage: Math.round((score.score / score.totalQuestions) * 100),
-                timestamp: score.timestamp?.toDate?.()?.toLocaleString() || 'Unknown'
-            });
-        });
-
-        history.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-        history.forEach(item => {
+            const percentage = Math.round((score.score / score.totalQuestions) * 100);
+            const timestamp = score.timestamp?.toDate?.()?.toLocaleString() || 'Unknown';
+            
             const historyItem = document.createElement('div');
             historyItem.className = 'history-item';
             historyItem.innerHTML = `
-                <span>Score: ${item.score}/${item.totalQuestions} (${item.percentage}%)</span>
-                <span style="font-size: 0.9em; color: var(--text);">${item.timestamp}</span>
+                <span>Score: ${score.score}/${score.totalQuestions} (${percentage}%)</span>
+                <span style="font-size: 0.9em; color: var(--text);">${timestamp}</span>
             `;
             historyDiv.appendChild(historyItem);
         });
 
-        historyContainer.appendChild(historyDiv);
-        document.getElementById('quiz-history').classList.remove('hidden');
+        fragment.appendChild(historyDiv);
+        DOM.historyContainer.innerHTML = '';
+        DOM.historyContainer.appendChild(fragment);
+        
+        const quizHistory = document.getElementById('quiz-history');
+        if (quizHistory) quizHistory.classList.remove('hidden');
     } catch (error) {
         console.error('Error loading quiz history:', error);
-        document.getElementById('history-container').innerHTML = '<p>Error loading history</p>';
+        DOM.historyContainer.innerHTML = '<p>Error loading history</p>';
     }
 }
 
 // Student functions
 window.startQuiz = async function() {
     try {
-        const adminSnapshot = await getDocs(query(collection(db, 'users'), orderBy('createdAt')));
-        let canTakeQuiz = false;
-        adminSnapshot.forEach(doc => {
-            const userData = doc.data();
-            if (userData.role === 'admin' && userData.examStart && userData.examEnd) {
-                examSchedule.start = userData.examStart.toDate();
-                examSchedule.end = userData.examEnd.toDate();
-                const now = new Date();
-                if (now >= examSchedule.start && now <= examSchedule.end) {
-                    canTakeQuiz = true;
-                }
-            }
-        });
-
-        if (!canTakeQuiz) {
-            alert(`Quiz is not available. Schedule: ${examSchedule.start?.toLocaleString() || 'Not set'} - ${examSchedule.end?.toLocaleString() || 'Not set'}`);
+        // Get admin settings (cached)
+        const settings = await getAdminSettings();
+        
+        if (!settings || !settings.examStart || !settings.examEnd) {
+            alert('Quiz schedule not configured. Please contact your administrator.');
             return;
         }
 
-        const questionsSnapshot = await getDocs(collection(db, 'questions'));
-        currentQuestions = [];
+        examSchedule.start = settings.examStart.toDate();
+        examSchedule.end = settings.examEnd.toDate();
+        const now = new Date();
         
-        questionsSnapshot.forEach((doc) => {
-            currentQuestions.push({ id: doc.id, ...doc.data() });
-        });
+        if (now < examSchedule.start || now > examSchedule.end) {
+            alert(`Quiz is not available. Schedule: ${examSchedule.start.toLocaleString()} - ${examSchedule.end.toLocaleString()}`);
+            return;
+        }
+
+        // Use cached questions if available
+        if (!cachedQuestions || cachedQuestions.length === 0) {
+            const questionsSnapshot = await getDocs(collection(db, 'questions'));
+            currentQuestions = [];
+            
+            questionsSnapshot.forEach((doc) => {
+                currentQuestions.push({ id: doc.id, ...doc.data() });
+            });
+        } else {
+            currentQuestions = [...cachedQuestions];
+        }
 
         if (currentQuestions.length === 0) {
             alert('No questions available. Please contact your teacher.');
@@ -637,15 +848,9 @@ window.startQuiz = async function() {
         studentAnswers = {};
         currentQuestionIndex = 0;
 
-        let quizDuration = 30;
-        adminSnapshot.forEach(doc => {
-            const userData = doc.data();
-            if (userData.role === 'admin' && userData.quizDuration) {
-                quizDuration = userData.quizDuration;
-            }
-        });
-
+        const quizDuration = settings.quizDuration || 30;
         timeRemaining = quizDuration * 60;
+        
         startTimer();
         displayQuiz();
     } catch (error) {
@@ -654,15 +859,19 @@ window.startQuiz = async function() {
 };
 
 function startTimer() {
-    timerContainer.classList.remove('hidden');
+    if (DOM.timerContainer) {
+        DOM.timerContainer.classList.remove('hidden');
+        DOM.timerContainer.classList.remove('timer-critical');
+    }
+    
     updateTimerDisplay();
 
     timerInterval = setInterval(() => {
         timeRemaining--;
         updateTimerDisplay();
 
-        if (timeRemaining <= 60) {
-            timerContainer.classList.add('timer-critical');
+        if (timeRemaining <= 60 && DOM.timerContainer) {
+            DOM.timerContainer.classList.add('timer-critical');
         }
 
         if (timeRemaining <= 0) {
@@ -673,35 +882,46 @@ function startTimer() {
 }
 
 function updateTimerDisplay() {
+    if (!DOM.timerDisplay) return;
+    
     const minutes = Math.floor(timeRemaining / 60);
     const seconds = timeRemaining % 60;
-    timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    DOM.timerDisplay.textContent = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// OPTIMIZATION: Use template literals more efficiently
 function displayQuiz() {
-    const quizContainer = document.getElementById('quiz-questions');
-    quizContainer.innerHTML = '';
-
+    if (!DOM.quizQuestions) return;
+    
     const question = currentQuestions[currentQuestionIndex];
-    const questionDiv = document.createElement('div');
-    questionDiv.className = 'question-card';
-    questionDiv.innerHTML = `
-        <h4>Question ${currentQuestionIndex + 1}: ${question.question}</h4>
-        <div class="question-options">
-            ${Object.entries(question.options).map(([key, value]) => `
-                <div class="option ${studentAnswers[question.id] === key ? 'selected' : ''}" onclick="selectOption('${question.id}', '${key}', this)">
+    
+    const optionsHTML = Object.entries(question.options)
+        .map(([key, value]) => {
+            const selectedClass = studentAnswers[question.id] === key ? 'selected' : '';
+            return `
+                <div class="option ${selectedClass}" onclick="selectOption('${question.id}', '${key}', this)">
                     <strong>${key}:</strong> ${value}
                 </div>
-            `).join('')}
+            `;
+        })
+        .join('');
+    
+    DOM.quizQuestions.innerHTML = `
+        <div class="question-card">
+            <h4>Question ${currentQuestionIndex + 1}: ${question.question}</h4>
+            <div class="question-options">
+                ${optionsHTML}
+            </div>
         </div>
     `;
-    quizContainer.appendChild(questionDiv);
 
     const progress = ((currentQuestionIndex + 1) / currentQuestions.length) * 100;
-    progressBarFill.style.width = `${progress}%`;
+    if (DOM.progressBarFill) {
+        DOM.progressBarFill.style.width = `${progress}%`;
+    }
 
-    document.getElementById('quiz-start').classList.add('hidden');
-    document.getElementById('quiz-container').classList.remove('hidden');
+    DOM.quizStart?.classList.add('hidden');
+    DOM.quizContainer?.classList.remove('hidden');
 }
 
 window.nextQuestion = function() {
@@ -721,7 +941,7 @@ window.selectOption = function(questionId, option, element) {
 
 window.submitQuiz = async function() {
     clearInterval(timerInterval);
-    timerContainer.classList.add('hidden');
+    DOM.timerContainer?.classList.add('hidden');
 
     let score = 0;
     const results = [];
@@ -756,28 +976,40 @@ window.submitQuiz = async function() {
     }
 };
 
+// OPTIMIZATION: Use DocumentFragment for results
 function displayResults(score, total, results) {
     const percentage = Math.round((score / total) * 100);
     
-    document.getElementById('final-score').textContent = `${score}/${total} (${percentage}%)`;
+    if (DOM.finalScore) {
+        DOM.finalScore.textContent = `${score}/${total} (${percentage}%)`;
+    }
     
-    const detailsDiv = document.getElementById('result-details');
-    detailsDiv.innerHTML = `
-        <div style="text-align: left; margin-top: 20px;">
-            <h4>Detailed Results:</h4>
-            ${results.map((result, index) => `
-                <div class="question-card" style="border-left-color: ${result.isCorrect ? 'var(--primary)' : 'var(--error)'}">
+    if (DOM.resultDetails) {
+        const resultsHTML = results.map((result, index) => {
+            const borderColor = result.isCorrect ? 'var(--primary)' : 'var(--error)';
+            const resultColor = result.isCorrect ? 'var(--primary)' : 'var(--error)';
+            const resultText = result.isCorrect ? '✓ Correct' : '✗ Incorrect';
+            
+            return `
+                <div class="question-card" style="border-left-color: ${borderColor}">
                     <p><strong>Q${index + 1}:</strong> ${result.question}</p>
                     <p><strong>Your Answer:</strong> ${result.studentAnswer}</p>
                     <p><strong>Correct Answer:</strong> ${result.correctAnswer}</p>
-                    <p><strong>Result:</strong> <span style="color: ${result.isCorrect ? 'var(--primary)' : 'var(--error)'}">${result.isCorrect ? '✓ Correct' : '✗ Incorrect'}</span></p>
+                    <p><strong>Result:</strong> <span style="color: ${resultColor}">${resultText}</span></p>
                 </div>
-            `).join('')}
-        </div>
-    `;
+            `;
+        }).join('');
+        
+        DOM.resultDetails.innerHTML = `
+            <div style="text-align: left; margin-top: 20px;">
+                <h4>Detailed Results:</h4>
+                ${resultsHTML}
+            </div>
+        `;
+    }
 
-    document.getElementById('quiz-container').classList.add('hidden');
-    document.getElementById('quiz-results').classList.remove('hidden');
+    DOM.quizContainer?.classList.add('hidden');
+    DOM.quizResults?.classList.remove('hidden');
 }
 
 window.printResults = function() {
@@ -785,11 +1017,12 @@ window.printResults = function() {
 };
 
 window.retakeQuiz = function() {
-    document.getElementById('quiz-results').classList.add('hidden');
-    document.getElementById('quiz-start').classList.remove('hidden');
+    DOM.quizResults?.classList.add('hidden');
+    DOM.quizStart?.classList.remove('hidden');
     studentAnswers = {};
     currentQuestions = [];
     currentQuestionIndex = 0;
-    timerContainer.classList.add('hidden');
+    DOM.timerContainer?.classList.add('hidden');
     clearInterval(timerInterval);
 };
+l
