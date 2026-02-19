@@ -1,0 +1,1273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QUIZZER — Rewards Panel</title>
+
+<!-- Google Fonts: Syne (display) + DM Sans (body) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+/* ── Design Tokens ───────────────────────────────── */
+:root {
+    --bg:       #0F1117;
+    --surface:  #191C27;
+    --surface2: #222638;
+    --border:   #2D3148;
+    --accent:   #7C6AF7;   /* violet */
+    --accent2:  #F7A26A;   /* amber  */
+    --gold:     #FFD770;
+    --text:     #E8EAFF;
+    --muted:    #6E7191;
+    --success:  #4ADE80;
+    --font-display: 'Syne', sans-serif;
+    --font-body:    'DM Sans', sans-serif;
+    --radius:   14px;
+    --transition: 0.22s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Reset ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+}
+
+/* ── Reward Panel Container ──────────────────────── */
+.reward-panel {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ── Header ──────────────────────────────────────── */
+.reward-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    background: linear-gradient(135deg, #1A1733 0%, #1E2038 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    position: relative;
+    overflow: hidden;
+}
+.reward-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 0% 50%, rgba(124,106,247,.18) 0%, transparent 60%);
+    pointer-events: none;
+}
+.avatar-ring {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    display: grid; place-items: center;
+    font-size: 2rem;
+    background: var(--surface);
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(124,106,247,.4);
+}
+.header-info { flex: 1; }
+.header-name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+.header-pts {
+    font-size: .85rem;
+    color: var(--muted);
+    margin-top: .15rem;
+}
+.header-pts span { color: var(--accent2); font-weight: 600; }
+.level-badge {
+    background: linear-gradient(135deg, var(--accent), #4F3BDB);
+    padding: .4rem 1rem;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    white-space: nowrap;
+}
+
+/* ── XP Progress Bar ─────────────────────────────── */
+.xp-section {
+    padding: 1.25rem 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.xp-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: .8rem;
+    color: var(--muted);
+    margin-bottom: .6rem;
+}
+.xp-labels strong { color: var(--text); }
+.xp-track {
+    height: 10px;
+    background: var(--surface2);
+    border-radius: 99px;
+    overflow: hidden;
+}
+.xp-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Toast / Reward Pop ──────────────────────────── */
+#reward-toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    pointer-events: none;
+}
+.toast-item {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 1rem 1.4rem;
+    min-width: 240px;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    animation: toast-in .4s cubic-bezier(.4,0,.2,1) forwards,
+               toast-out .4s cubic-bezier(.4,0,.2,1) 3.5s forwards;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+}
+.toast-icon { font-size: 1.6rem; }
+.toast-body { flex: 1; }
+.toast-title { font-weight: 600; font-size: .9rem; color: var(--gold); }
+.toast-sub   { font-size: .78rem; color: var(--muted); margin-top: .1rem; }
+
+@keyframes toast-in {
+    from { opacity:0; transform: translateX(40px); }
+    to   { opacity:1; transform: translateX(0);    }
+}
+@keyframes toast-out {
+    from { opacity:1; transform: translateX(0);    }
+    to   { opacity:0; transform: translateX(40px); }
+}
+
+/* ── Streak Banner ───────────────────────────────── */
+.streak-banner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, #2B1A0E 0%, #1C1712 100%);
+    border: 1px solid #3D2710;
+    border-radius: var(--radius);
+}
+.streak-flame { font-size: 2.2rem; animation: flicker 1.2s ease-in-out infinite alternate; }
+@keyframes flicker {
+    from { transform: scale(1) rotate(-3deg); }
+    to   { transform: scale(1.08) rotate(3deg); }
+}
+.streak-info strong {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: #FF9D42;
+}
+.streak-info p { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+.streak-count {
+    margin-left: auto;
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #FF9D42;
+    line-height: 1;
+}
+
+/* ── Badge Grid ──────────────────────────────────── */
+.section-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: .75rem;
+}
+.badges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1rem;
+}
+.badge-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem .75rem;
+    text-align: center;
+    transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+}
+.badge-card.earned {
+    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(124,106,247,.2);
+}
+.badge-card.earned:hover {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 8px 28px rgba(124,106,247,.35);
+}
+.badge-card.locked { opacity: .45; filter: grayscale(1); }
+.badge-icon { font-size: 2rem; display: block; margin-bottom: .5rem; }
+.badge-name {
+    font-size: .78rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text);
+    display: block;
+}
+.badge-desc { font-size: .68rem; color: var(--muted); margin-top: .3rem; display: block; }
+.badge-card.earned::after {
+    content: '✓';
+    position: absolute;
+    top: .5rem; right: .6rem;
+    font-size: .7rem;
+    color: var(--success);
+    font-weight: 700;
+}
+
+/* ── Leaderboard ─────────────────────────────────── */
+.leaderboard-list { display: flex; flex-direction: column; gap: .5rem; }
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .85rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: background var(--transition);
+}
+.lb-row.me { background: #1D1A37; border-color: var(--accent); }
+.lb-rank {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 800;
+    min-width: 2rem;
+    text-align: center;
+}
+.lb-rank.gold   { color: #FFD770; }
+.lb-rank.silver { color: #C0C0C0; }
+.lb-rank.bronze { color: #CD7F32; }
+.lb-name { flex: 1; font-weight: 500; font-size: .9rem; }
+.lb-pts  { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--accent2); }
+.lb-level{ font-size: .75rem; color: var(--muted); }
+
+/* ── Tabs ────────────────────────────────────────── */
+.reward-tabs {
+    display: flex;
+    gap: .4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .4rem;
+}
+.rtab {
+    flex: 1;
+    padding: .55rem;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: .85rem;
+    font-weight: 500;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+.rtab.active {
+    background: var(--accent);
+    color: #fff;
+}
+.rtab-pane { display: none; }
+.rtab-pane.active { display: block; }
+
+/* ── Points Earned Animation ─────────────────────── */
+.pts-pop {
+    position: fixed;
+    pointer-events: none;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.6rem;
+    color: var(--gold);
+    text-shadow: 0 2px 8px rgba(0,0,0,.6);
+    animation: pts-float 1.8s ease forwards;
+    z-index: 9998;
+}
+@keyframes pts-float {
+    0%  { opacity:0; transform: translateY(0) scale(.6); }
+    20% { opacity:1; transform: translateY(-20px) scale(1); }
+    80% { opacity:1; transform: translateY(-70px) scale(1); }
+    100%{ opacity:0; transform: translateY(-100px) scale(.9); }
+}
+
+/* ── Responsive ──────────────────────────────────── */
+@media (max-width: 480px) {
+    .badges-grid { grid-template-columns: repeat(3, 1fr); }
+    .reward-header { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- ✦ REWARD TOAST CONTAINER (fixed, always in DOM) -->
+<div id="reward-toast"></div>
+
+<!-- ✦ REWARD PANEL  — place this HTML block inside your student panel -->
+<div class="reward-panel" id="reward-panel">
+
+    <!-- Header -->
+    <div class="reward-header">
+        <div class="avatar-ring" id="rp-avatar">🎓</div>
+        <div class="header-info">
+            <div class="header-name" id="rp-name">Loading…</div>
+            <div class="header-pts">Total XP: <span id="rp-points">0</span> pts</div>
+        </div>
+        <div class="level-badge">LVL <span id="rp-level">1</span></div>
+    </div>
+
+    <!-- XP Bar -->
+    <div class="xp-section">
+        <div class="xp-labels">
+            <span>Level <strong id="xp-cur-lvl">1</strong></span>
+            <span id="xp-progress-txt">0 / 200 XP to next level</span>
+            <span>Level <strong id="xp-next-lvl">2</strong></span>
+        </div>
+        <div class="xp-track">
+            <div class="xp-fill" id="xp-fill" style="width:0%"></div>
+        </div>
+    </div>
+
+    <!-- Streak -->
+    <div class="streak-banner" id="rp-streak-banner" style="display:none">
+        <div class="streak-flame">🔥</div>
+        <div class="streak-info">
+            <strong>Streak Active!</strong>
+            <p>Keep scoring 70%+ to grow your streak</p>
+        </div>
+        <div class="streak-count" id="rp-streak">0</div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="reward-tabs">
+        <button class="rtab active" onclick="switchRewardTab('badges', this)">🏅 Badges</button>
+        <button class="rtab"        onclick="switchRewardTab('leaderboard', this)">🏆 Leaderboard</button>
+    </div>
+
+    <!-- Badges Pane -->
+    <div class="rtab-pane active" id="rtab-badges">
+        <div class="section-title">All Badges</div>
+        <div class="badges-grid" id="rp-badges-grid"><!-- injected by JS --></div>
+    </div>
+
+    <!-- Leaderboard Pane -->
+    <div class="rtab-pane" id="rtab-leaderboard">
+        <div class="section-title">Top Scorers</div>
+        <div class="leaderboard-list" id="rp-leaderboard"><!-- injected by JS --></div>
+    </div>
+
+</div><!-- /.reward-panel -->
+
+
+<!-- ✦ INTEGRATION SCRIPT — paste this block into your main app JS file -->
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: In your real app, import from './rewards.js' and call these functions
+// after Firebase is initialized. The demo below shows exactly how to hook in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { initializeApp }       from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
+import { getFirestore, doc, getDoc, setDoc, addDoc, getDocs,
+         collection, query, where, orderBy }
+                               from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
+
+// ── Re-paste your firebaseConfig here ────────────────────────────────────────
+const firebaseConfig = {
+    apiKey: "AIzaSyDHDr97LespxW-Xw8tqZkFXJc1dqr-z14E",
+    authDomain: "cbt-test-base.firebaseapp.com",
+    projectId: "cbt-test-base",
+    storageBucket: "cbt-test-base.firebasestorage.app",
+    messagingSenderId: "357554144599",
+    appId: "1:357554144599:web:afdea4523ef59c7a9b6a12"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── Badge defs (mirrors rewards.js) ──────────────────────────────────────────
+const BADGES = {
+    PERFECT:       { icon:'🏆', name:'Perfect Score',    desc:'Score 100% on a quiz'           },
+    HIGH_ACHIEVER: { icon:'🌟', name:'High Achiever',    desc:'Score 80% or above'             },
+    HALF_WAY:      { icon:'🎯', name:'Halfway There',    desc:'Score 50% or above'             },
+    FIRST_TRY:     { icon:'🚀', name:'First Attempt',    desc:'Complete your first quiz'       },
+    COMEBACK:      { icon:'💪', name:'Comeback Kid',     desc:'Improve score from last attempt'},
+    THREE_STREAK:  { icon:'🔥', name:'On Fire',          desc:'Score 70%+ three times in a row'},
+    FIVE_STREAK:   { icon:'⚡', name:'Lightning',        desc:'Score 70%+ five times in a row' },
+    DEDICATED:     { icon:'📚', name:'Dedicated',        desc:'Take 5 quizzes total'           },
+    VETERAN:       { icon:'🎓', name:'Veteran',          desc:'Take 20 quizzes total'          },
+    SPEED_DEMON:   { icon:'⏱️',  name:'Speed Demon',      desc:'Finish a quiz in under 2 min'   },
+    NIGHT_OWL:     { icon:'🦉', name:'Night Owl',        desc:'Complete a quiz after 10 PM'    },
+    EARLY_BIRD:    { icon:'🌅', name:'Early Bird',       desc:'Complete a quiz before 7 AM'    },
+};
+
+const LEVEL_THRESHOLDS = [0, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+// ── STEP 1: Call initRewardSystem on page load ────────────────────────────────
+// initRewardSystem(db, { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, orderBy });
+
+// ── STEP 2: After submitQuiz() saves the score, call: ─────────────────────────
+// const { pointsEarned, newBadges, newLevel, streakCount }
+//     = await processQuizRewards(currentUser.uid, score, total, timeTakenSecs);
+// showRewardFeedback(pointsEarned, newBadges);   // shows toasts + pts pop
+// loadRewardPanel(currentUser.uid, userName);    // refresh panel
+
+// ── UI FUNCTIONS (expose globally for your existing app) ──────────────────────
+
+window.loadRewardPanel = async function(userId, userName) {
+    const snap = await getDoc(doc(db, 'rewards', userId));
+    const profile = snap.exists() ? snap.data() : { points:0, level:1, badges:[], streak:0 };
+
+    // Header
+    document.getElementById('rp-name').textContent = userName || 'Player';
+    document.getElementById('rp-points').textContent = profile.points.toLocaleString();
+    document.getElementById('rp-level').textContent  = profile.level;
+    document.getElementById('xp-cur-lvl').textContent = profile.level;
+    document.getElementById('xp-next-lvl').textContent = profile.level + 1;
+
+    // XP bar
+    const curThresh  = LEVEL_THRESHOLDS[Math.min(profile.level - 1, LEVEL_THRESHOLDS.length - 1)] || 0;
+    const nextThresh = LEVEL_THRESHOLDS[Math.min(profile.level,     LEVEL_THRESHOLDS.length - 1)] || LEVEL_THRESHOLDS.at(-1);
+    const xpInLevel  = profile.points - curThresh;
+    const xpNeeded   = nextThresh - curThresh;
+    const pct        = Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));
+    document.getElementById('xp-fill').style.width = pct + '%';
+    document.getElementById('xp-progress-txt').textContent =
+        `${xpInLevel.toLocaleString()} / ${xpNeeded.toLocaleString()} XP to next level`;
+
+    // Streak
+    const streakBanner = document.getElementById('rp-streak-banner');
+    const streak = profile.streak || 0;
+    if (streak >= 2) {
+        streakBanner.style.display = 'flex';
+        document.getElementById('rp-streak').textContent = streak;
+    } else {
+        streakBanner.style.display = 'none';
+    }
+
+    // Badges
+    const earned = profile.badges || [];
+    const grid   = document.getElementById('rp-badges-grid');
+    grid.innerHTML = Object.entries(BADGES).map(([id, b]) => {
+        const isEarned = earned.includes(id);
+        return `
+          <div class="badge-card ${isEarned ? 'earned' : 'locked'}" title="${b.desc}">
+            <span class="badge-icon">${b.icon}</span>
+            <span class="badge-name">${b.name}</span>
+            <span class="badge-desc">${b.desc}</span>
+          </div>`;
+    }).join('');
+
+    // Leaderboard
+    await _renderLeaderboard(userId);
+};
+
+async function _renderLeaderboard(currentUserId) {
+    const snap = await getDocs(collection(db, 'rewards'));
+    const rows = [];
+    snap.forEach(d => rows.push({ userId: d.id, ...d.data() }));
+    rows.sort((a,b) => (b.points||0) - (a.points||0));
+
+    // Fetch names in parallel
+    const userSnaps = await Promise.all(
+        rows.slice(0, 10).map(r => getDoc(doc(db, 'users', r.userId)))
+    );
+    const rankColors = ['gold','silver','bronze'];
+    const rankIcons  = ['🥇','🥈','🥉'];
+
+    const lb = document.getElementById('rp-leaderboard');
+    lb.innerHTML = rows.slice(0, 10).map((r, i) => {
+        const name = userSnaps[i]?.data()?.name || 'Unknown';
+        const rankClass = rankColors[i] || '';
+        const rankDisp  = rankIcons[i] || `#${i+1}`;
+        const isMe = r.userId === currentUserId;
+        return `
+          <div class="lb-row ${isMe ? 'me' : ''}">
+            <div class="lb-rank ${rankClass}">${rankDisp}</div>
+            <div class="lb-name">${name}${isMe ? ' <em style="color:var(--muted);font-size:.75rem">(you)</em>' : ''}</div>
+            <div style="text-align:right">
+              <div class="lb-pts">${(r.points||0).toLocaleString()} pts</div>
+              <div class="lb-level">Lvl ${r.level||1}</div>
+            </div>
+          </div>`;
+    }).join('');
+}
+
+// ── Show toasts & floating points after a quiz ────────────────────────────────
+window.showRewardFeedback = function(pointsEarned, newBadges) {
+    // Floating +pts
+    const pop = document.createElement('div');
+    pop.className = 'pts-pop';
+    pop.textContent = `+${pointsEarned} XP`;
+    pop.style.cssText = `left:${window.innerWidth/2 - 50}px; top:${window.innerHeight/2}px`;
+    document.body.appendChild(pop);
+    setTimeout(() => pop.remove(), 1900);
+
+    // Badge toasts
+    newBadges.forEach((badge, i) => {
+        setTimeout(() => _showToast(badge), i * 700);
+    });
+
+    // Always show XP toast
+    setTimeout(() => {
+        _showToast({
+            icon: '⚡',
+            name: `+${pointsEarned} XP Earned!`,
+            desc: newBadges.length ? `${newBadges.length} new badge${newBadges.length > 1 ? 's' : ''} unlocked!` : 'Keep it up!'
+        });
+    }, newBadges.length * 700);
+};
+
+function _showToast({ icon, name, desc }) {
+    const container = document.getElementById('reward-toast');
+    const item = document.createElement('div');
+    item.className = 'toast-item';
+    item.innerHTML = `
+      <div class="toast-icon">${icon}</div>
+      <div class="toast-body">
+        <div class="toast-title">${name}</div>
+        <div class="toast-sub">${desc}</div>
+      </div>`;
+    container.appendChild(item);
+    setTimeout(() => item.remove(), 4100);
+}
+
+// ── Tab switch ────────────────────────────────────────────────────────────────
+window.switchRewardTab = function(tab, btn) {
+    document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.rtab-pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`rtab-${tab}`).classList.add('active');
+};
+
+// ── DEMO: remove in production ────────────────────────────────────────────────
+// Simulates receiving reward data without a live login
+(function demo() {
+    const fakeProfile = {
+        points: 1340,
+        level: 4,
+        badges: ['FIRST_TRY', 'HALF_WAY', 'HIGH_ACHIEVER', 'DEDICATED', 'COMEBACK', 'THREE_STREAK', 'NIGHT_OWL'],
+        streak: 4
+    };
+    const LEVEL_T = [0, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+    document.getElementById('rp-name').textContent   = 'Demo Student';
+    document.getElementById('rp-points').textContent = fakeProfile.points.toLocaleString();
+    document.getElementById('rp-level').textContent  = fakeProfile.level;
+    document.getElementById('xp-cur-lvl').textContent = fakeProfile.level;
+    document.getElementById('xp-next-lvl').textContent = fakeProfile.level + 1;
+
+    const cur = LEVEL_T[fakeProfile.level - 1], nxt = LEVEL_T[fakeProfile.level];
+    const pct = Math.round(((fakeProfile.points - cur) / (nxt - cur)) * 100);
+    setTimeout(() => { document.getElementById('xp-fill').style.width = pct + '%'; }, 300);
+    document.getElementById('xp-progress-txt').textContent =
+        `${fakeProfile.points - cur} / ${nxt - cur} XP to next level`;
+
+    document.getElementById('rp-streak-banner').style.display = 'flex';
+    document.getElementById('rp-streak').textContent = fakeProfile.streak;
+
+    const earned = fakeProfile.badges;
+    document.getElementById('rp-badges-grid').innerHTML = Object.entries(BADGES).map(([id,b]) => `
+      <div class="badge-card ${earned.includes(id) ? 'earned' : 'locked'}" title="${b.desc}">
+        <span class="badge-icon">${b.icon}</span>
+        <span class="badge-name">${b.name}</span>
+        <span class="badge-desc">${b.desc}</span>
+      </div>`).join('');
+
+    // Fake leaderboard
+    const fakeBoard = [
+        { name:'Alice Okafor',  pts:3200, lvl:6 },
+        { name:'Demo Student',  pts:1340, lvl:4, me:true },
+        { name:'Emeka Chukwu',  pts:1100, lvl:3 },
+        { name:'Bisi Adewale',  pts: 890, lvl:3 },
+        { name:'Fola Adesanya', pts: 540, lvl:2 },
+    ];
+    const rankColors = ['gold','silver','bronze'];
+    const rankIcons  = ['🥇','🥈','🥉'];
+    document.getElementById('rp-leaderboard').innerHTML = fakeBoard.map((r,i) => `
+      <div class="lb-row ${r.me ? 'me' : ''}">
+        <div class="lb-rank ${rankColors[i]||''}">${rankIcons[i]||'#'+(i+1)}</div>
+        <div class="lb-name">${r.name}${r.me ? ' <em style="color:var(--muted);font-size:.75rem">(you)</em>':''}</div>
+        <div style="text-align:right">
+          <div class="lb-pts">${r.pts.toLocaleString()} pts</div>
+          <div class="lb-level">Lvl ${r.lvl}</div>
+        </div>
+      </div>`).join('');
+
+    // Demo toast after 1s
+    setTimeout(() => {
+        window.showRewardFeedback(80, [
+            { icon:'💪', name:'Comeback Kid', desc:'You improved your score!' },
+        ]);
+    }, 1200);
+})();
+</script>
+</body>
+</html><!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>QUIZZER — Rewards Panel</title>
+
+<!-- Google Fonts: Syne (display) + DM Sans (body) -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+
+<style>
+/* ── Design Tokens ───────────────────────────────── */
+:root {
+    --bg:       #0F1117;
+    --surface:  #191C27;
+    --surface2: #222638;
+    --border:   #2D3148;
+    --accent:   #7C6AF7;   /* violet */
+    --accent2:  #F7A26A;   /* amber  */
+    --gold:     #FFD770;
+    --text:     #E8EAFF;
+    --muted:    #6E7191;
+    --success:  #4ADE80;
+    --font-display: 'Syne', sans-serif;
+    --font-body:    'DM Sans', sans-serif;
+    --radius:   14px;
+    --transition: 0.22s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Reset ───────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    padding: 2rem 1rem;
+}
+
+/* ── Reward Panel Container ──────────────────────── */
+.reward-panel {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* ── Header ──────────────────────────────────────── */
+.reward-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    background: linear-gradient(135deg, #1A1733 0%, #1E2038 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    position: relative;
+    overflow: hidden;
+}
+.reward-header::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 0% 50%, rgba(124,106,247,.18) 0%, transparent 60%);
+    pointer-events: none;
+}
+.avatar-ring {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    border: 3px solid var(--accent);
+    display: grid; place-items: center;
+    font-size: 2rem;
+    background: var(--surface);
+    flex-shrink: 0;
+    box-shadow: 0 0 20px rgba(124,106,247,.4);
+}
+.header-info { flex: 1; }
+.header-name {
+    font-family: var(--font-display);
+    font-size: 1.3rem;
+    font-weight: 800;
+}
+.header-pts {
+    font-size: .85rem;
+    color: var(--muted);
+    margin-top: .15rem;
+}
+.header-pts span { color: var(--accent2); font-weight: 600; }
+.level-badge {
+    background: linear-gradient(135deg, var(--accent), #4F3BDB);
+    padding: .4rem 1rem;
+    border-radius: 999px;
+    font-family: var(--font-display);
+    font-size: .85rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    white-space: nowrap;
+}
+
+/* ── XP Progress Bar ─────────────────────────────── */
+.xp-section {
+    padding: 1.25rem 2rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.xp-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: .8rem;
+    color: var(--muted);
+    margin-bottom: .6rem;
+}
+.xp-labels strong { color: var(--text); }
+.xp-track {
+    height: 10px;
+    background: var(--surface2);
+    border-radius: 99px;
+    overflow: hidden;
+}
+.xp-fill {
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    transition: width .8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ── Toast / Reward Pop ──────────────────────────── */
+#reward-toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    pointer-events: none;
+}
+.toast-item {
+    background: var(--surface2);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 1rem 1.4rem;
+    min-width: 240px;
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    animation: toast-in .4s cubic-bezier(.4,0,.2,1) forwards,
+               toast-out .4s cubic-bezier(.4,0,.2,1) 3.5s forwards;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+}
+.toast-icon { font-size: 1.6rem; }
+.toast-body { flex: 1; }
+.toast-title { font-weight: 600; font-size: .9rem; color: var(--gold); }
+.toast-sub   { font-size: .78rem; color: var(--muted); margin-top: .1rem; }
+
+@keyframes toast-in {
+    from { opacity:0; transform: translateX(40px); }
+    to   { opacity:1; transform: translateX(0);    }
+}
+@keyframes toast-out {
+    from { opacity:1; transform: translateX(0);    }
+    to   { opacity:0; transform: translateX(40px); }
+}
+
+/* ── Streak Banner ───────────────────────────────── */
+.streak-banner {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem 2rem;
+    background: linear-gradient(135deg, #2B1A0E 0%, #1C1712 100%);
+    border: 1px solid #3D2710;
+    border-radius: var(--radius);
+}
+.streak-flame { font-size: 2.2rem; animation: flicker 1.2s ease-in-out infinite alternate; }
+@keyframes flicker {
+    from { transform: scale(1) rotate(-3deg); }
+    to   { transform: scale(1.08) rotate(3deg); }
+}
+.streak-info strong {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    color: #FF9D42;
+}
+.streak-info p { font-size: .8rem; color: var(--muted); margin-top: .1rem; }
+.streak-count {
+    margin-left: auto;
+    font-family: var(--font-display);
+    font-size: 2.4rem;
+    font-weight: 800;
+    color: #FF9D42;
+    line-height: 1;
+}
+
+/* ── Badge Grid ──────────────────────────────────── */
+.section-title {
+    font-family: var(--font-display);
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: .05em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: .75rem;
+}
+.badges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 1rem;
+}
+.badge-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem .75rem;
+    text-align: center;
+    transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+}
+.badge-card.earned {
+    border-color: var(--accent);
+    box-shadow: 0 0 16px rgba(124,106,247,.2);
+}
+.badge-card.earned:hover {
+    transform: translateY(-4px) scale(1.03);
+    box-shadow: 0 8px 28px rgba(124,106,247,.35);
+}
+.badge-card.locked { opacity: .45; filter: grayscale(1); }
+.badge-icon { font-size: 2rem; display: block; margin-bottom: .5rem; }
+.badge-name {
+    font-size: .78rem;
+    font-weight: 600;
+    line-height: 1.3;
+    color: var(--text);
+    display: block;
+}
+.badge-desc { font-size: .68rem; color: var(--muted); margin-top: .3rem; display: block; }
+.badge-card.earned::after {
+    content: '✓';
+    position: absolute;
+    top: .5rem; right: .6rem;
+    font-size: .7rem;
+    color: var(--success);
+    font-weight: 700;
+}
+
+/* ── Leaderboard ─────────────────────────────────── */
+.leaderboard-list { display: flex; flex-direction: column; gap: .5rem; }
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: .85rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    transition: background var(--transition);
+}
+.lb-row.me { background: #1D1A37; border-color: var(--accent); }
+.lb-rank {
+    font-family: var(--font-display);
+    font-size: 1.1rem;
+    font-weight: 800;
+    min-width: 2rem;
+    text-align: center;
+}
+.lb-rank.gold   { color: #FFD770; }
+.lb-rank.silver { color: #C0C0C0; }
+.lb-rank.bronze { color: #CD7F32; }
+.lb-name { flex: 1; font-weight: 500; font-size: .9rem; }
+.lb-pts  { font-family: var(--font-display); font-size: 1rem; font-weight: 700; color: var(--accent2); }
+.lb-level{ font-size: .75rem; color: var(--muted); }
+
+/* ── Tabs ────────────────────────────────────────── */
+.reward-tabs {
+    display: flex;
+    gap: .4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: .4rem;
+}
+.rtab {
+    flex: 1;
+    padding: .55rem;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: .85rem;
+    font-weight: 500;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+.rtab.active {
+    background: var(--accent);
+    color: #fff;
+}
+.rtab-pane { display: none; }
+.rtab-pane.active { display: block; }
+
+/* ── Points Earned Animation ─────────────────────── */
+.pts-pop {
+    position: fixed;
+    pointer-events: none;
+    font-family: var(--font-display);
+    font-weight: 800;
+    font-size: 1.6rem;
+    color: var(--gold);
+    text-shadow: 0 2px 8px rgba(0,0,0,.6);
+    animation: pts-float 1.8s ease forwards;
+    z-index: 9998;
+}
+@keyframes pts-float {
+    0%  { opacity:0; transform: translateY(0) scale(.6); }
+    20% { opacity:1; transform: translateY(-20px) scale(1); }
+    80% { opacity:1; transform: translateY(-70px) scale(1); }
+    100%{ opacity:0; transform: translateY(-100px) scale(.9); }
+}
+
+/* ── Responsive ──────────────────────────────────── */
+@media (max-width: 480px) {
+    .badges-grid { grid-template-columns: repeat(3, 1fr); }
+    .reward-header { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<!-- ✦ REWARD TOAST CONTAINER (fixed, always in DOM) -->
+<div id="reward-toast"></div>
+
+<!-- ✦ REWARD PANEL  — place this HTML block inside your student panel -->
+<div class="reward-panel" id="reward-panel">
+
+    <!-- Header -->
+    <div class="reward-header">
+        <div class="avatar-ring" id="rp-avatar">🎓</div>
+        <div class="header-info">
+            <div class="header-name" id="rp-name">Loading…</div>
+            <div class="header-pts">Total XP: <span id="rp-points">0</span> pts</div>
+        </div>
+        <div class="level-badge">LVL <span id="rp-level">1</span></div>
+    </div>
+
+    <!-- XP Bar -->
+    <div class="xp-section">
+        <div class="xp-labels">
+            <span>Level <strong id="xp-cur-lvl">1</strong></span>
+            <span id="xp-progress-txt">0 / 200 XP to next level</span>
+            <span>Level <strong id="xp-next-lvl">2</strong></span>
+        </div>
+        <div class="xp-track">
+            <div class="xp-fill" id="xp-fill" style="width:0%"></div>
+        </div>
+    </div>
+
+    <!-- Streak -->
+    <div class="streak-banner" id="rp-streak-banner" style="display:none">
+        <div class="streak-flame">🔥</div>
+        <div class="streak-info">
+            <strong>Streak Active!</strong>
+            <p>Keep scoring 70%+ to grow your streak</p>
+        </div>
+        <div class="streak-count" id="rp-streak">0</div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="reward-tabs">
+        <button class="rtab active" onclick="switchRewardTab('badges', this)">🏅 Badges</button>
+        <button class="rtab"        onclick="switchRewardTab('leaderboard', this)">🏆 Leaderboard</button>
+    </div>
+
+    <!-- Badges Pane -->
+    <div class="rtab-pane active" id="rtab-badges">
+        <div class="section-title">All Badges</div>
+        <div class="badges-grid" id="rp-badges-grid"><!-- injected by JS --></div>
+    </div>
+
+    <!-- Leaderboard Pane -->
+    <div class="rtab-pane" id="rtab-leaderboard">
+        <div class="section-title">Top Scorers</div>
+        <div class="leaderboard-list" id="rp-leaderboard"><!-- injected by JS --></div>
+    </div>
+
+</div><!-- /.reward-panel -->
+
+
+<!-- ✦ INTEGRATION SCRIPT — paste this block into your main app JS file -->
+<script type="module">
+// ─────────────────────────────────────────────────────────────────────────────
+// NOTE: In your real app, import from './rewards.js' and call these functions
+// after Firebase is initialized. The demo below shows exactly how to hook in.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { initializeApp }       from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js';
+import { getFirestore, doc, getDoc, setDoc, addDoc, getDocs,
+         collection, query, where, orderBy }
+                               from 'https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js';
+
+// ── Re-paste your firebaseConfig here ────────────────────────────────────────
+const firebaseConfig = {
+    apiKey: "AIzaSyDHDr97LespxW-Xw8tqZkFXJc1dqr-z14E",
+    authDomain: "cbt-test-base.firebaseapp.com",
+    projectId: "cbt-test-base",
+    storageBucket: "cbt-test-base.firebasestorage.app",
+    messagingSenderId: "357554144599",
+    appId: "1:357554144599:web:afdea4523ef59c7a9b6a12"
+};
+const app = initializeApp(firebaseConfig);
+const db  = getFirestore(app);
+
+// ── Badge defs (mirrors rewards.js) ──────────────────────────────────────────
+const BADGES = {
+    PERFECT:       { icon:'🏆', name:'Perfect Score',    desc:'Score 100% on a quiz'           },
+    HIGH_ACHIEVER: { icon:'🌟', name:'High Achiever',    desc:'Score 80% or above'             },
+    HALF_WAY:      { icon:'🎯', name:'Halfway There',    desc:'Score 50% or above'             },
+    FIRST_TRY:     { icon:'🚀', name:'First Attempt',    desc:'Complete your first quiz'       },
+    COMEBACK:      { icon:'💪', name:'Comeback Kid',     desc:'Improve score from last attempt'},
+    THREE_STREAK:  { icon:'🔥', name:'On Fire',          desc:'Score 70%+ three times in a row'},
+    FIVE_STREAK:   { icon:'⚡', name:'Lightning',        desc:'Score 70%+ five times in a row' },
+    DEDICATED:     { icon:'📚', name:'Dedicated',        desc:'Take 5 quizzes total'           },
+    VETERAN:       { icon:'🎓', name:'Veteran',          desc:'Take 20 quizzes total'          },
+    SPEED_DEMON:   { icon:'⏱️',  name:'Speed Demon',      desc:'Finish a quiz in under 2 min'   },
+    NIGHT_OWL:     { icon:'🦉', name:'Night Owl',        desc:'Complete a quiz after 10 PM'    },
+    EARLY_BIRD:    { icon:'🌅', name:'Early Bird',       desc:'Complete a quiz before 7 AM'    },
+};
+
+const LEVEL_THRESHOLDS = [0, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+// ── STEP 1: Call initRewardSystem on page load ────────────────────────────────
+// initRewardSystem(db, { doc, getDoc, setDoc, addDoc, collection, getDocs, query, where, orderBy });
+
+// ── STEP 2: After submitQuiz() saves the score, call: ─────────────────────────
+// const { pointsEarned, newBadges, newLevel, streakCount }
+//     = await processQuizRewards(currentUser.uid, score, total, timeTakenSecs);
+// showRewardFeedback(pointsEarned, newBadges);   // shows toasts + pts pop
+// loadRewardPanel(currentUser.uid, userName);    // refresh panel
+
+// ── UI FUNCTIONS (expose globally for your existing app) ──────────────────────
+
+window.loadRewardPanel = async function(userId, userName) {
+    const snap = await getDoc(doc(db, 'rewards', userId));
+    const profile = snap.exists() ? snap.data() : { points:0, level:1, badges:[], streak:0 };
+
+    // Header
+    document.getElementById('rp-name').textContent = userName || 'Player';
+    document.getElementById('rp-points').textContent = profile.points.toLocaleString();
+    document.getElementById('rp-level').textContent  = profile.level;
+    document.getElementById('xp-cur-lvl').textContent = profile.level;
+    document.getElementById('xp-next-lvl').textContent = profile.level + 1;
+
+    // XP bar
+    const curThresh  = LEVEL_THRESHOLDS[Math.min(profile.level - 1, LEVEL_THRESHOLDS.length - 1)] || 0;
+    const nextThresh = LEVEL_THRESHOLDS[Math.min(profile.level,     LEVEL_THRESHOLDS.length - 1)] || LEVEL_THRESHOLDS.at(-1);
+    const xpInLevel  = profile.points - curThresh;
+    const xpNeeded   = nextThresh - curThresh;
+    const pct        = Math.min(100, Math.round((xpInLevel / xpNeeded) * 100));
+    document.getElementById('xp-fill').style.width = pct + '%';
+    document.getElementById('xp-progress-txt').textContent =
+        `${xpInLevel.toLocaleString()} / ${xpNeeded.toLocaleString()} XP to next level`;
+
+    // Streak
+    const streakBanner = document.getElementById('rp-streak-banner');
+    const streak = profile.streak || 0;
+    if (streak >= 2) {
+        streakBanner.style.display = 'flex';
+        document.getElementById('rp-streak').textContent = streak;
+    } else {
+        streakBanner.style.display = 'none';
+    }
+
+    // Badges
+    const earned = profile.badges || [];
+    const grid   = document.getElementById('rp-badges-grid');
+    grid.innerHTML = Object.entries(BADGES).map(([id, b]) => {
+        const isEarned = earned.includes(id);
+        return `
+          <div class="badge-card ${isEarned ? 'earned' : 'locked'}" title="${b.desc}">
+            <span class="badge-icon">${b.icon}</span>
+            <span class="badge-name">${b.name}</span>
+            <span class="badge-desc">${b.desc}</span>
+          </div>`;
+    }).join('');
+
+    // Leaderboard
+    await _renderLeaderboard(userId);
+};
+
+async function _renderLeaderboard(currentUserId) {
+    const snap = await getDocs(collection(db, 'rewards'));
+    const rows = [];
+    snap.forEach(d => rows.push({ userId: d.id, ...d.data() }));
+    rows.sort((a,b) => (b.points||0) - (a.points||0));
+
+    // Fetch names in parallel
+    const userSnaps = await Promise.all(
+        rows.slice(0, 10).map(r => getDoc(doc(db, 'users', r.userId)))
+    );
+    const rankColors = ['gold','silver','bronze'];
+    const rankIcons  = ['🥇','🥈','🥉'];
+
+    const lb = document.getElementById('rp-leaderboard');
+    lb.innerHTML = rows.slice(0, 10).map((r, i) => {
+        const name = userSnaps[i]?.data()?.name || 'Unknown';
+        const rankClass = rankColors[i] || '';
+        const rankDisp  = rankIcons[i] || `#${i+1}`;
+        const isMe = r.userId === currentUserId;
+        return `
+          <div class="lb-row ${isMe ? 'me' : ''}">
+            <div class="lb-rank ${rankClass}">${rankDisp}</div>
+            <div class="lb-name">${name}${isMe ? ' <em style="color:var(--muted);font-size:.75rem">(you)</em>' : ''}</div>
+            <div style="text-align:right">
+              <div class="lb-pts">${(r.points||0).toLocaleString()} pts</div>
+              <div class="lb-level">Lvl ${r.level||1}</div>
+            </div>
+          </div>`;
+    }).join('');
+}
+
+// ── Show toasts & floating points after a quiz ────────────────────────────────
+window.showRewardFeedback = function(pointsEarned, newBadges) {
+    // Floating +pts
+    const pop = document.createElement('div');
+    pop.className = 'pts-pop';
+    pop.textContent = `+${pointsEarned} XP`;
+    pop.style.cssText = `left:${window.innerWidth/2 - 50}px; top:${window.innerHeight/2}px`;
+    document.body.appendChild(pop);
+    setTimeout(() => pop.remove(), 1900);
+
+    // Badge toasts
+    newBadges.forEach((badge, i) => {
+        setTimeout(() => _showToast(badge), i * 700);
+    });
+
+    // Always show XP toast
+    setTimeout(() => {
+        _showToast({
+            icon: '⚡',
+            name: `+${pointsEarned} XP Earned!`,
+            desc: newBadges.length ? `${newBadges.length} new badge${newBadges.length > 1 ? 's' : ''} unlocked!` : 'Keep it up!'
+        });
+    }, newBadges.length * 700);
+};
+
+function _showToast({ icon, name, desc }) {
+    const container = document.getElementById('reward-toast');
+    const item = document.createElement('div');
+    item.className = 'toast-item';
+    item.innerHTML = `
+      <div class="toast-icon">${icon}</div>
+      <div class="toast-body">
+        <div class="toast-title">${name}</div>
+        <div class="toast-sub">${desc}</div>
+      </div>`;
+    container.appendChild(item);
+    setTimeout(() => item.remove(), 4100);
+}
+
+// ── Tab switch ────────────────────────────────────────────────────────────────
+window.switchRewardTab = function(tab, btn) {
+    document.querySelectorAll('.rtab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.rtab-pane').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById(`rtab-${tab}`).classList.add('active');
+};
+
+// ── DEMO: remove in production ────────────────────────────────────────────────
+// Simulates receiving reward data without a live login
+(function demo() {
+    const fakeProfile = {
+        points: 1340,
+        level: 4,
+        badges: ['FIRST_TRY', 'HALF_WAY', 'HIGH_ACHIEVER', 'DEDICATED', 'COMEBACK', 'THREE_STREAK', 'NIGHT_OWL'],
+        streak: 4
+    };
+    const LEVEL_T = [0, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
+
+    document.getElementById('rp-name').textContent   = 'Demo Student';
+    document.getElementById('rp-points').textContent = fakeProfile.points.toLocaleString();
+    document.getElementById('rp-level').textContent  = fakeProfile.level;
+    document.getElementById('xp-cur-lvl').textContent = fakeProfile.level;
+    document.getElementById('xp-next-lvl').textContent = fakeProfile.level + 1;
+
+    const cur = LEVEL_T[fakeProfile.level - 1], nxt = LEVEL_T[fakeProfile.level];
+    const pct = Math.round(((fakeProfile.points - cur) / (nxt - cur)) * 100);
+    setTimeout(() => { document.getElementById('xp-fill').style.width = pct + '%'; }, 300);
+    document.getElementById('xp-progress-txt').textContent =
+        `${fakeProfile.points - cur} / ${nxt - cur} XP to next level`;
+
+    document.getElementById('rp-streak-banner').style.display = 'flex';
+    document.getElementById('rp-streak').textContent = fakeProfile.streak;
+
+    const earned = fakeProfile.badges;
+    document.getElementById('rp-badges-grid').innerHTML = Object.entries(BADGES).map(([id,b]) => `
+      <div class="badge-card ${earned.includes(id) ? 'earned' : 'locked'}" title="${b.desc}">
+        <span class="badge-icon">${b.icon}</span>
+        <span class="badge-name">${b.name}</span>
+        <span class="badge-desc">${b.desc}</span>
+      </div>`).join('');
+
+    // Fake leaderboard
+    const fakeBoard = [
+        { name:'Alice Okafor',  pts:3200, lvl:6 },
+        { name:'Demo Student',  pts:1340, lvl:4, me:true },
+        { name:'Emeka Chukwu',  pts:1100, lvl:3 },
+        { name:'Bisi Adewale',  pts: 890, lvl:3 },
+        { name:'Fola Adesanya', pts: 540, lvl:2 },
+    ];
+    const rankColors = ['gold','silver','bronze'];
+    const rankIcons  = ['🥇','🥈','🥉'];
+    document.getElementById('rp-leaderboard').innerHTML = fakeBoard.map((r,i) => `
+      <div class="lb-row ${r.me ? 'me' : ''}">
+        <div class="lb-rank ${rankColors[i]||''}">${rankIcons[i]||'#'+(i+1)}</div>
+        <div class="lb-name">${r.name}${r.me ? ' <em style="color:var(--muted);font-size:.75rem">(you)</em>':''}</div>
+        <div style="text-align:right">
+          <div class="lb-pts">${r.pts.toLocaleString()} pts</div>
+          <div class="lb-level">Lvl ${r.lvl}</div>
+        </div>
+      </div>`).join('');
+
+    // Demo toast after 1s
+    setTimeout(() => {
+        window.showRewardFeedback(80, [
+            { icon:'💪', name:'Comeback Kid', desc:'You improved your score!' },
+        ]);
+    }, 1200);
+})();
+</script>
+</body>
+</html>
