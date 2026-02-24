@@ -1,0 +1,59 @@
+<!-- Add this section to the student panel, after quiz-results div -->
+
+<!-- Quiz Review Mode Section -->
+<div id="quiz-review" class="quiz-review hidden">
+    <div class="review-controls">
+        <h2>📖 Quiz Review</h2>
+        <div class="review-filters">
+            <button onclick="filterReviewQuestions('all')" class="btn btn-sm btn-secondary">
+                All Questions
+            </button>
+            <button onclick="filterReviewQuestions('incorrect')" class="btn btn-sm btn-error">
+                Incorrect Only
+            </button>
+            <button onclick="filterReviewQuestions('correct')" class="btn btn-sm btn-success">
+                Correct Only
+            </button>
+        </div>
+    </div>
+    
+    <div id="review-container" class="review-container">
+        <!-- Review questions will be dynamically inserted here -->
+    </div>
+    
+    <nav id="review-navigation" class="review-navigation" aria-label="Review navigation">
+        <!-- Navigation buttons will be dynamically inserted here -->
+    </nav>
+    
+    <div class="review-footer">
+        <button onclick="exitReviewMode()" class="btn btn-secondary">
+            ← Back to Results
+        </button>
+        <div class="review-hint">
+            💡 Tip: Use arrow keys (← →) to navigate between questions
+        </div>
+    </div>
+</div>
+
+<!-- Update the quiz-results section to include Review Mode button -->
+<!-- Replace the existing quiz-results div with this enhanced version: -->
+
+<div id="quiz-results" class="quiz-results hidden" role="region" aria-labelledby="results-heading">
+    <h2 id="results-heading">Quiz Results</h2>
+    <div class="score-display" id="final-score" aria-live="polite"></div>
+    
+    <!-- Action buttons -->
+    <div class="results-actions">
+        <button onclick="startReviewMode()" class="btn btn-primary btn-large">
+            📖 Review Answers
+        </button>
+        <button onclick="printResults()" class="btn btn-secondary">
+            🖨️ Print Results
+        </button>
+        <button onclick="retakeQuiz()" class="btn btn-success">
+            🔄 Take Quiz Again
+        </button>
+    </div>
+    
+    <div id="result-details"></div>
+</div>
